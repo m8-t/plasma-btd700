@@ -14,9 +14,8 @@ This project provides an interface for the missing dongle control functionality 
 - [PipeWire sink switching daemon](daemon/)
 
 ### missing
-- software updates
-- broadcast settings
-- BTD 600 support (?)
+- firmware updates
+- BTD 600 support (it lacks the BTD 700 control features; its desktop app only provides firmware updates)
 
 ### known bugs
 - "Is gaming mode available" query doesn't work, but setting gaming mode works fine

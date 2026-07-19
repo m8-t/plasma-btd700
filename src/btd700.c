@@ -336,8 +336,8 @@ btd700_error_t btd700_driver_broadcast_info(btd700_driver_t* drv,
     memset(out, 0, sizeof(*out));
     if (resp_len >= 7) {
         out->state = (btd700_broadcast_state_t)resp[4];
-        out->encryption = (btd700_broadcast_encryption_t)resp[5];
-        out->quality = (btd700_broadcast_quality_t)resp[6];
+        out->quality = (btd700_broadcast_quality_t)resp[5];
+        out->encryption = (btd700_broadcast_encryption_t)resp[6];
     }
     return BTD700_OK;
 }
@@ -424,8 +424,8 @@ btd700_error_t btd700_driver_set_broadcast_info(btd700_driver_t* drv,
 
     uint8_t args[3];
     args[0] = (uint8_t)state;
-    args[1] = (uint8_t)encryption;
-    args[2] = (uint8_t)quality;
+    args[1] = (uint8_t)quality;
+    args[2] = (uint8_t)encryption;
 
     return send_and_receive(drv, CMD_SET_BROADCAST_INFO, args, 3, NULL, NULL);
 }

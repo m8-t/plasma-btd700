@@ -12,7 +12,7 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 
 - Panel and tray icon that changes shape and colour with the link state
 - Shows headphone state, active codec, sample rate and bit depth, audio mode, transport and firmware version
-- Switch audio mode: high quality, gaming (low latency), broadcast
+- Switch audio mode: high quality or gaming (low latency)
 - Select the codec from the ones the dongle currently offers
 - Connect headphones that are powered on but not linked to the dongle
 - Switches the default audio sink to the dongle when the headphones connect and back to your previous sink when they disconnect
@@ -125,6 +125,7 @@ Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh
 
 ## Notes
 
+- Broadcast (Auracast) mode is not offered in the applet, because switching to it drops the paired headphone link. It is still available with `SetAudioMode s broadcast` over D-Bus; broadcast name, key and quality are not exposed.
 - The set of supported codecs depends on the audio mode. In gaming mode the dongle offers aptX Adaptive only.
 - The "gaming available" query is not answered by the dongle, so `GamingAvailable` stays false. Setting gaming mode works regardless.
 - Set `BTD700_DEBUG=1` in the daemon's environment to hex-dump every unsolicited dongle packet to stderr. Unrecognised event IDs are marked `UNKNOWN`.

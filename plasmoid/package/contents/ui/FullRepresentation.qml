@@ -21,9 +21,14 @@ PlasmaExtras.Representation {
 
     readonly property var audioModes: [
         { id: "high-quality", label: i18n("High quality") },
-        { id: "gaming", label: i18n("Gaming") },
-        { id: "broadcast", label: i18n("Broadcast") }
+        { id: "gaming", label: i18n("Gaming") }
     ]
+
+    readonly property var modeLabels: ({
+        "high-quality": i18n("High quality"),
+        "gaming": i18n("Gaming"),
+        "broadcast": i18n("Broadcast")
+    })
 
     function transportText(token) {
         switch (token) {
@@ -41,11 +46,7 @@ PlasmaExtras.Representation {
     }
 
     function modeText(token) {
-        for (let i = 0; i < audioModes.length; i++) {
-            if (audioModes[i].id === token)
-                return audioModes[i].label;
-        }
-        return i18n("Unknown");
+        return modeLabels[token] !== undefined ? modeLabels[token] : i18n("Unknown");
     }
 
     function errorText(name, message) {

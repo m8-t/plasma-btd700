@@ -11,7 +11,7 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 - Shows headphone state, active codec, sample rate and bit depth, audio mode, transport and firmware version
 - Switch audio mode: high quality, gaming (low latency), broadcast
 - Select the codec from the ones the dongle currently offers
-- Connect and disconnect the headphones
+- Connect headphones that are powered on but not linked to the dongle
 - Switches the default audio sink to the dongle when the headphones connect and back to your previous sink when they disconnect
 - Everything is also available on the session D-Bus, so scripts and other desktops can use it
 
@@ -27,7 +27,7 @@ Not available:
 Plasma applet  --D-Bus-->  btd700d  --USB HID-->  BTD 700
 (plasmoid/)                (daemon/)   via libbtd700ctl (src/)
                               |
-                              +-- pactl: default sink switching, sink suspend
+                              +-- pactl: default sink switching
 ```
 
 `btd700d` is the only process that opens the dongle. Command responses and unsolicited events share one HID stream, so a second reader would steal responses. The applet never touches the device and talks to the daemon over D-Bus only.
@@ -87,11 +87,9 @@ The fallback is chosen in this order, and the choice is logged:
 2. the remembered sink, if it still exists
 3. the available non-dongle sink with the lowest index
 
-### Disconnect and auto-reconnect
+### Auto-reconnect
 
-The dongle reconnects the headphones on its own whenever the host has its USB audio device open. To make a disconnect hold, `Disconnect()` moves the default sink to the fallback so streams following the default leave the dongle, waits up to 0.6 s for them to move, suspends the dongle's sink, and only then drops the link. `Connect()` resumes the sink first.
-
-Limitation: a stream pinned to the dongle's sink, or an application that plays to it later, makes PipeWire resume the sink and the dongle reconnects. Such streams are not moved or stopped.
+The dongle keeps powered-on headphones connected. If the link is dropped with `Disconnect()`, the dongle re-establishes it on its own a moment later, and no reliable way was found to hold the headphones disconnected from the host side. To move audio away from the dongle, switch the headphones off (the default sink then moves to the fallback) or pick another output device.
 
 ## D-Bus API
 
@@ -120,7 +118,7 @@ busctl --user monitor org.btd700ctl.Dongle
 
 All properties are read-only and emit `PropertiesChanged`.
 
-Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
+Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`. `Connect` and `Disconnect` are plain triggers; after `Disconnect` the dongle reconnects by itself. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
 
 ## Notes
 
@@ -135,11 +133,13 @@ Forked from [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl) at commit 
 
 Changes made in this fork (October 2026):
 
-- `daemon/btd700d.c`: D-Bus API, reworked main loop, `pactl` based sink handling with a persisted fallback sink, sink suspend on disconnect
+- `daemon/btd700d.c`: D-Bus API, reworked main loop, `pactl` based sink handling with a persisted fallback sink
 - `src/btd700.c`: optional debug dump of unsolicited packets (`BTD700_DEBUG`)
 - `CMakeLists.txt`: libsystemd dependency, `BUILD_PLASMOID` option
 - new: `daemon/org.btd700ctl.Dongle1.xml`, `plasmoid/`
 - `README.md` rewritten
+
+The changes in this fork were written with AI assistance (Claude Code) and tested by the maintainer on real hardware.
 
 Not affiliated with or endorsed by Sennheiser.
 

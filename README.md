@@ -71,7 +71,7 @@ Start the daemon:
 systemctl --user enable --now btd700d.service
 ```
 
-Then add "BTD 700 Dongle" through the panel's "Add Widgets", or enable it under system tray settings, "Entries".
+Then add "BTD 700 Dongle" through the panel's "Add Widgets", or enable it under system tray settings, "Entries". If it is not listed right after installing, restart the shell once: `systemctl --user restart plasma-plasmashell`.
 
 To try the applet without installing it:
 

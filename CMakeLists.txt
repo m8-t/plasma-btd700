@@ -9,7 +9,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(HIDAPI REQUIRED hidapi-hidraw)
+pkg_check_modules(LIBSYSTEMD REQUIRED libsystemd)
 
+option(BUILD_PLASMOID "Build the KDE Plasma 6 applet" OFF)
 option(BUILD_SHARED_LIBS "Build shared library instead of static" OFF)
 
 add_library(btd700ctl
@@ -53,9 +55,16 @@ target_link_libraries(btd700_example PRIVATE btd700ctl::btd700ctl)
 
 # daemon
 add_executable(btd700d daemon/btd700d.c)
-target_link_libraries(btd700d PRIVATE btd700ctl::btd700ctl)
+target_link_libraries(btd700d PRIVATE btd700ctl::btd700ctl ${LIBSYSTEMD_LIBRARIES})
+target_include_directories(btd700d PRIVATE ${LIBSYSTEMD_INCLUDE_DIRS})
 target_compile_features(btd700d PRIVATE c_std_99)
 
 install(TARGETS btd700d RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES daemon/btd700d.service DESTINATION lib/systemd/user)
+install(FILES daemon/org.btd700ctl.Dongle1.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/interfaces)
 
+
+if(BUILD_PLASMOID)
+    enable_testing()
+    add_subdirectory(plasmoid)
+endif()

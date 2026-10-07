@@ -1,0 +1,75 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+"https://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!--
+  Session bus: name org.btd700ctl.Dongle, object /org/btd700ctl/Dongle.
+  All properties are read-only and emit PropertiesChanged.
+
+  Present          dongle HID device is open. When false, all other properties
+                   hold defaults (State "none", AudioMode "unknown", Transport
+                   "disconnected", empty arrays, 0, false, "").
+  State            none, disconnected, connected, streaming-audio, streaming-voice
+  AudioMode        high-quality, gaming, broadcast ("unknown" if no dongle or
+                   unrecognised value)
+  Transport        disconnected, classic, le-audio, multipoint ("unknown" if
+                   unrecognised value)
+  SupportedCodecs  subset of sbc, aptx, aptx-adaptive, aptx-lossless, aptx-lite, lc3
+  ActiveCodecs     same tokens, bitmask from the device so possibly several
+  SampleRate       Hz, 0 if unknown
+  BitDepth         bits, 0 if unknown
+  GamingAvailable  the underlying query is unreliable, false when it fails
+  FirmwareVersion  "major.minor.build", empty if not read
+
+  Errors: org.freedesktop.DBus.Error.InvalidArgs (unknown mode or codec, codec
+  not supported by the dongle), org.btd700ctl.Error.NotPresent (no dongle),
+  org.btd700ctl.Error.Failed (HID failure).
+  SetAudioMode keeps the current transport unchanged.
+  Disconnect moves the default sink to the fallback sink (see README), waits up
+  to 0.6 s for streams to leave, suspends the dongle's PipeWire sink (via pactl)
+  and then drops the headphones. Connect resumes the sink. The dongle reconnects
+  whenever the host holds its audio device open, so streams pinned to that sink
+  or applications that play to it later make PipeWire resume it and the dongle
+  reconnects.
+-->
+<node>
+ <interface name="org.btd700ctl.Dongle1">
+  <method name="SetAudioMode">
+   <arg type="s" name="mode" direction="in"/>
+  </method>
+  <method name="SetCodec">
+   <arg type="s" name="codec" direction="in"/>
+  </method>
+  <method name="Connect"/>
+  <method name="Disconnect"/>
+  <method name="Refresh"/>
+  <property name="Present" type="b" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="State" type="s" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="AudioMode" type="s" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="Transport" type="s" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="SupportedCodecs" type="as" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="ActiveCodecs" type="as" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="SampleRate" type="u" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="BitDepth" type="u" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="GamingAvailable" type="b" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="FirmwareVersion" type="s" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+ </interface>
+</node>

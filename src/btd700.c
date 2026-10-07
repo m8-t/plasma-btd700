@@ -2,6 +2,7 @@
 #include "protocol_impl.h"
 
 #include <hidapi/hidapi.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -31,20 +32,34 @@ static btd700_error_t hid_open_device(btd700_driver_t* drv) {
     return BTD700_ERR_DEVICE_NOT_FOUND;
 }
 
-static void dispatch_event(const btd700_driver_t* drv, const uint8_t* data, const int len) {
-    if (!drv->event_cb || len < 4) return;
-
-    btd700_event_type_t type;
-    switch (data[2]) {
-        case EVT_DONGLE_STATE:   type = BTD700_EVENT_STATE_CHANGED; break;
-        case EVT_AUDIO_MODE:     type = BTD700_EVENT_AUDIO_MODE_CHANGED; break;
-        case EVT_CODEC_TO_USE:   type = BTD700_EVENT_CODEC_CHANGED; break;
-        case EVT_LE_AUDIO_STATE: type = BTD700_EVENT_LE_AUDIO_STATE_CHANGED; break;
-        case EVT_AUDIO_QUALITY:  type = BTD700_EVENT_AUDIO_QUALITY_CHANGED; break;
-        case EVT_SINK_TRANSPORT: type = BTD700_EVENT_SINK_TRANSPORT_CHANGED; break;
-        case EVT_GAMING_STATUS:  type = BTD700_EVENT_GAMING_AVAILABILITY_CHANGED; break;
-        default: return;
+static int map_event_id(const uint8_t id, btd700_event_type_t* type) {
+    switch (id) {
+        case EVT_DONGLE_STATE:   *type = BTD700_EVENT_STATE_CHANGED; return 1;
+        case EVT_AUDIO_MODE:     *type = BTD700_EVENT_AUDIO_MODE_CHANGED; return 1;
+        case EVT_CODEC_TO_USE:   *type = BTD700_EVENT_CODEC_CHANGED; return 1;
+        case EVT_LE_AUDIO_STATE: *type = BTD700_EVENT_LE_AUDIO_STATE_CHANGED; return 1;
+        case EVT_AUDIO_QUALITY:  *type = BTD700_EVENT_AUDIO_QUALITY_CHANGED; return 1;
+        case EVT_SINK_TRANSPORT: *type = BTD700_EVENT_SINK_TRANSPORT_CHANGED; return 1;
+        case EVT_GAMING_STATUS:  *type = BTD700_EVENT_GAMING_AVAILABILITY_CHANGED; return 1;
+        default: return 0;
     }
+}
+
+static void debug_dump(const uint8_t* data, const int len, const int known) {
+    if (!getenv("BTD700_DEBUG")) return;
+    fprintf(stderr, "btd700: %s 0xFC packet, %d bytes:", known ? "known" : "UNKNOWN", len);
+    for (int i = 0; i < len; i++) fprintf(stderr, " %02x", data[i]);
+    fputc('\n', stderr);
+}
+
+static void dispatch_event(const btd700_driver_t* drv, const uint8_t* data, const int len) {
+    if (len < 3) return;
+
+    btd700_event_type_t type = BTD700_EVENT_STATE_CHANGED;
+    const int known = map_event_id(data[2], &type);
+    debug_dump(data, len, known);
+
+    if (!drv->event_cb || len < 4 || !known) return;
 
     size_t data_len = (len > 4) ? (size_t)(len - 4) : 0;
     if (data_len > data[3]) data_len = data[3];

@@ -251,15 +251,6 @@ PlasmaExtras.Representation {
             }
         }
 
-        PlasmaComponents3.Button {
-            Layout.alignment: Qt.AlignHCenter
-            visible: full.client.serviceAvailable && full.client.present && full.headphonesUp
-            enabled: !full.client.busy
-            icon.name: "network-disconnect"
-            text: i18n("Disconnect")
-            onClicked: full.client.disconnectHeadphones()
-        }
-
         Item {
             Layout.fillHeight: true
         }

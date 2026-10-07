@@ -47,7 +47,6 @@ public:
     Q_INVOKABLE void setAudioMode(const QString& mode);
     Q_INVOKABLE void setCodec(const QString& codec);
     Q_INVOKABLE void connectHeadphones();
-    Q_INVOKABLE void disconnectHeadphones();
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void clearError();
 

@@ -15,7 +15,6 @@
 
 static volatile sig_atomic_t g_running = 1;
 static int g_sink_switched = 0;
-static int g_sink_suspended = 0;
 
 static void signal_handler(int sig) {
     (void)sig;
@@ -24,8 +23,6 @@ static void signal_handler(int sig) {
 
 #define MAX_SINKS      32
 #define SINK_NAME_MAX  256
-#define SETTLE_STEP_MS 50
-#define SETTLE_MAX_MS  600
 
 typedef struct {
     unsigned long index;
@@ -476,76 +473,6 @@ static void flush_props(void) {
 
 /* runs inside send_and_receive, so it must not issue HID commands */
 
-/* the dongle reconnects whenever the host holds its USB audio device open, so an
- * explicit Disconnect only holds while PipeWire has the sink suspended */
-static int sink_inputs_on(const unsigned long* ids, int n) {
-    char buf[8192];
-    char* const argv[] = { "pactl", "list", "short", "sink-inputs", NULL };
-    if (run_argv(argv, buf, sizeof(buf)) < 0) return -1;
-
-    int count = 0;
-    for (char* line = strtok(buf, "\n"); line; line = strtok(NULL, "\n")) {
-        char* end = NULL;
-        strtoul(line, &end, 10);
-        if (end == line || *end != '\t') continue;
-        unsigned long sink = strtoul(end + 1, NULL, 10);
-        for (int i = 0; i < n; i++)
-            if (ids[i] == sink) count++;
-    }
-    return count;
-}
-
-/* streams following the default need a moment to move before the suspend, otherwise
- * they keep the sink RUNNING and undo it; bounded, pinned streams just time out */
-static void settle_streams(const unsigned long* ids, int n) {
-    int left = -1;
-    for (int waited = 0; waited <= SETTLE_MAX_MS; waited += SETTLE_STEP_MS) {
-        left = sink_inputs_on(ids, n);
-        if (left <= 0) return;
-        usleep(SETTLE_STEP_MS * 1000);
-    }
-    fprintf(stderr, "btd700d: %d stream(s) still on the BTD700 sink, suspending anyway\n", left);
-}
-
-static int pactl_suspend_sink(unsigned long id, int on) {
-    char idbuf[32];
-    snprintf(idbuf, sizeof(idbuf), "%lu", id);
-    char* const argv[] = { "pactl", "suspend-sink", idbuf, (char*)(on ? "1" : "0"), NULL };
-    return run_argv(argv, NULL, 0);
-}
-
-/* returns 1 if at least one sink was (un)suspended, never fatal */
-static int suspend_btd_sink(int on) {
-    sink_t sinks[MAX_SINKS];
-    unsigned long ids[MAX_SINKS];
-    int total = list_sinks(sinks, MAX_SINKS);
-    int n = 0;
-    for (int i = 0; i < total; i++)
-        if (is_btd_name(sinks[i].name)) ids[n++] = sinks[i].index;
-
-    if (total < 0) {
-        fprintf(stderr, "btd700d: pactl unavailable, cannot %s BTD700 sink\n", on ? "suspend" : "resume");
-        return 0;
-    }
-    if (n == 0) {
-        fprintf(stderr, "btd700d: BTD700 sink not found, cannot %s it\n", on ? "suspend" : "resume");
-        return 0;
-    }
-
-    if (on) settle_streams(ids, n);
-
-    int done = 0;
-    for (int i = 0; i < n; i++) {
-        if (pactl_suspend_sink(ids[i], on) == 0) {
-            done = 1;
-            fprintf(stderr, "btd700d: %s BTD700 sink (index %lu)\n", on ? "suspended" : "resumed", ids[i]);
-        } else {
-            fprintf(stderr, "btd700d: pactl suspend-sink %lu %d failed\n", ids[i], on);
-        }
-    }
-    return done;
-}
-
 static void on_event(const btd700_event_t* event, void* user_data) {
     (void)user_data;
 
@@ -706,8 +633,6 @@ static int m_connect(sd_bus_message* m, void* userdata, sd_bus_error* error) {
     (void)userdata;
     int r = require_present(error);
     if (r < 0) return r;
-    suspend_btd_sink(0);
-    g_sink_suspended = 0;
     btd700_error_t err = btd700_driver_trigger_connect(g_drv);
     if (err != BTD700_OK) return hid_failed(error, "connect", err);
     return set_done(m);
@@ -717,17 +642,8 @@ static int m_disconnect(sd_bus_message* m, void* userdata, sd_bus_error* error) 
     (void)userdata;
     int r = require_present(error);
     if (r < 0) return r;
-    restore_sink(1);
-    int suspended = suspend_btd_sink(1);
-    if (suspended) g_sink_suspended = 1;
     btd700_error_t err = btd700_driver_trigger_disconnect(g_drv);
-    if (err != BTD700_OK) {
-        if (suspended) {
-            suspend_btd_sink(0);
-            g_sink_suspended = 0;
-        }
-        return hid_failed(error, "disconnect", err);
-    }
+    if (err != BTD700_OK) return hid_failed(error, "disconnect", err);
     return set_done(m);
 }
 
@@ -885,7 +801,6 @@ int main(int argc, char* argv[]) {
                 btd700_driver_disconnect(g_drv);
                 if (stable) restore_sink(0);
                 stable = 0;
-                g_sink_suspended = 0;
                 g_dirty = 0;
                 reset_props();
                 next_connect = 0;
@@ -903,7 +818,6 @@ int main(int argc, char* argv[]) {
     }
 
     restore_sink(0);
-    if (g_sink_suspended) suspend_btd_sink(0);
     btd700_driver_disconnect(g_drv);
     close_bus();
     btd700_driver_destroy(g_drv);

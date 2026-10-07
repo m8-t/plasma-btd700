@@ -23,12 +23,9 @@
   not supported by the dongle), org.btd700ctl.Error.NotPresent (no dongle),
   org.btd700ctl.Error.Failed (HID failure).
   SetAudioMode keeps the current transport unchanged.
-  Disconnect moves the default sink to the fallback sink (see README), waits up
-  to 0.6 s for streams to leave, suspends the dongle's PipeWire sink (via pactl)
-  and then drops the headphones. Connect resumes the sink. The dongle reconnects
-  whenever the host holds its audio device open, so streams pinned to that sink
-  or applications that play to it later make PipeWire resume it and the dongle
-  reconnects.
+  Connect and Disconnect are plain HID triggers. The dongle re-establishes the
+  link on its own while the headphones are powered on, so Disconnect effectively
+  forces a reconnect.
 -->
 <node>
  <interface name="org.btd700ctl.Dongle1">

@@ -175,5 +175,4 @@ void DongleClient::clearError() { setError(QString(), QString()); }
 void DongleClient::setAudioMode(const QString& mode) { call(QStringLiteral("SetAudioMode"), {mode}); }
 void DongleClient::setCodec(const QString& codec) { call(QStringLiteral("SetCodec"), {codec}); }
 void DongleClient::connectHeadphones() { call(QStringLiteral("Connect")); }
-void DongleClient::disconnectHeadphones() { call(QStringLiteral("Disconnect")); }
 void DongleClient::refresh() { call(QStringLiteral("Refresh")); }

@@ -19,18 +19,20 @@ PlasmoidItem {
         if (!dongle.serviceAvailable)
             return "dialog-warning";
         if (!dongle.present)
-            return "network-bluetooth";
+            return "btd700ctl-idle-symbolic";
         switch (dongle.state) {
         case "streaming-audio":
-            return "audio-volume-high";
         case "streaming-voice":
-            return "audio-headset";
+            return "btd700ctl-streaming-symbolic";
         case "connected":
-            return "audio-headphones";
+            return "btd700ctl-connected-symbolic";
         default:
-            return "network-bluetooth-activated";
+            return "btd700ctl-idle-symbolic";
         }
     }
+
+    readonly property bool dongleAbsent: dongle.serviceAvailable && !dongle.present
+    readonly property bool customIcon: iconName.startsWith("btd700ctl-")
 
     readonly property string stateText: {
         if (!dongle.serviceAvailable)
@@ -77,7 +79,20 @@ PlasmoidItem {
 
         Kirigami.Icon {
             anchors.fill: parent
-            source: root.iconName
+            source: root.customIcon ? Qt.resolvedUrl("../icons/" + root.iconName + ".svg") : root.iconName
+            isMask: root.customIcon
+            color: {
+                if (root.dongleAbsent)
+                    return Kirigami.Theme.disabledTextColor;
+                switch (root.iconName) {
+                case "btd700ctl-streaming-symbolic":
+                    return Kirigami.Theme.highlightColor;
+                case "btd700ctl-connected-symbolic":
+                    return Kirigami.Theme.positiveTextColor;
+                default:
+                    return Kirigami.Theme.textColor;
+                }
+            }
             active: parent.containsMouse
         }
     }

@@ -29,4 +29,12 @@ set_target_properties(btd700dbuspluginplugin PROPERTIES INSTALL_RPATH "$ORIGIN")
 
 plasma_install_package(package org.btd700ctl.dongle)
 
+install(FILES icons/org.btd700ctl.dongle.svg
+        DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/scalable/apps)
+install(FILES
+        package/contents/icons/btd700ctl-connected-symbolic.svg
+        package/contents/icons/btd700ctl-streaming-symbolic.svg
+        package/contents/icons/btd700ctl-idle-symbolic.svg
+        DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/symbolic/apps)
+
 add_subdirectory(tests)

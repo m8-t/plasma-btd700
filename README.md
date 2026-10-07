@@ -1,3 +1,5 @@
+<img src="plasmoid/icons/org.btd700ctl.dongle.svg" alt="plasma-btd700 icon" width="96" align="right">
+
 # plasma-btd700
 
 Unofficial KDE Plasma 6 applet and control daemon for the Sennheiser BTD 700 USB Bluetooth dongle on Linux.
@@ -8,6 +10,7 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 
 ## Features
 
+- Panel and tray icon that changes shape and colour with the link state
 - Shows headphone state, active codec, sample rate and bit depth, audio mode, transport and firmware version
 - Switch audio mode: high quality, gaming (low latency), broadcast
 - Select the codec from the ones the dongle currently offers

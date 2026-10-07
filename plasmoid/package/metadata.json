@@ -9,7 +9,7 @@
         "Category": "Hardware",
         "Description": "Control the Sennheiser BTD 700 USB Bluetooth dongle",
         "EnabledByDefault": true,
-        "Icon": "audio-headphones",
+        "Icon": "org.btd700ctl.dongle",
         "Id": "org.btd700ctl.dongle",
         "License": "LGPL-2.1-only",
         "Name": "BTD 700 Dongle",

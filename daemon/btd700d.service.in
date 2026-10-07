@@ -4,7 +4,7 @@ After=pipewire.service wireplumber.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/btd700d
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/btd700d
 Restart=on-failure
 RestartSec=5
 

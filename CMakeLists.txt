@@ -60,7 +60,8 @@ target_include_directories(btd700d PRIVATE ${LIBSYSTEMD_INCLUDE_DIRS})
 target_compile_features(btd700d PRIVATE c_std_99)
 
 install(TARGETS btd700d RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES daemon/btd700d.service DESTINATION lib/systemd/user)
+configure_file(daemon/btd700d.service.in ${CMAKE_CURRENT_BINARY_DIR}/btd700d.service @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/btd700d.service DESTINATION lib/systemd/user)
 install(FILES daemon/org.btd700ctl.Dongle1.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/dbus-1/interfaces)
 
 

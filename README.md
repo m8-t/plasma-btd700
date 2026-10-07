@@ -20,7 +20,7 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 
 Not available:
 
-- Headphone battery level. The dongle does not report it over its HID protocol, and the headphones pair with the dongle, not with the host's Bluetooth stack.
+- Headphone battery level. The dongle does not report it over its HID protocol, and the headphones pair with the dongle, not with the host's Bluetooth stack. Reading it through the PC's own Bluetooth adapter was tried too: headphones linked to the dongle and a phone (multipoint) did not show up in a scan from the PC, so there was nothing to connect to.
 - Firmware updates
 - BTD 600 (it has no control protocol)
 

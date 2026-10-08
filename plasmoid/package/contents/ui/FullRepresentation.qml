@@ -20,8 +20,8 @@ PlasmaExtras.Representation {
         || client.state === "streaming-audio" || client.state === "streaming-voice"
 
     readonly property var audioModes: [
-        { id: "high-quality", label: i18n("High quality") },
-        { id: "gaming", label: i18n("Gaming") }
+        { id: "high-quality", label: i18n("High quality"), icon: "media-optical-audio-symbolic" },
+        { id: "gaming", label: i18n("Gaming"), icon: "input-gamepad-symbolic" }
     ]
 
     readonly property var modeLabels: ({
@@ -123,25 +123,42 @@ PlasmaExtras.Representation {
             explanation: i18n("Start it with: systemctl --user enable --now btd700d.service")
         }
 
-        PlasmaExtras.PlaceholderMessage {
+        ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: full.client.serviceAvailable && !full.client.present
-            iconName: "network-bluetooth"
-            text: i18n("Dongle not plugged in")
-            explanation: i18n("Plug in the BTD 700 USB dongle.")
+            spacing: Kirigami.Units.gridUnit
+
+            EmptyStateIcon {
+                source: Qt.resolvedUrl("../icons/btd700ctl-absent-symbolic.svg")
+                opacity: 0.75
+            }
+
+            PlasmaExtras.PlaceholderMessage {
+                Layout.fillWidth: true
+                text: i18n("Dongle not plugged in")
+                explanation: i18n("Plug in the BTD 700 USB dongle.")
+            }
         }
 
-        PlasmaExtras.PlaceholderMessage {
+        ColumnLayout {
             Layout.fillWidth: true
             visible: full.client.serviceAvailable && full.client.present && !full.headphonesUp
-            iconName: "network-bluetooth-activated"
-            text: i18n("Headphones not connected")
-            helpfulAction: Kirigami.Action {
-                icon.name: "network-connect"
-                text: i18n("Connect")
-                enabled: !full.client.busy
-                onTriggered: full.client.connectHeadphones()
+            spacing: Kirigami.Units.gridUnit
+
+            EmptyStateIcon {
+                source: Qt.resolvedUrl("../icons/btd700ctl-idle-symbolic.svg")
+            }
+
+            PlasmaExtras.PlaceholderMessage {
+                Layout.fillWidth: true
+                text: i18n("Headphones not connected")
+                helpfulAction: Kirigami.Action {
+                    icon.name: "network-connect"
+                    text: i18n("Connect")
+                    enabled: !full.client.busy
+                    onTriggered: full.client.connectHeadphones()
+                }
             }
         }
 
@@ -205,10 +222,12 @@ PlasmaExtras.Representation {
             text: i18n("Audio mode")
         }
 
-        RowLayout {
+        Row {
+            id: modeRow
             Layout.fillWidth: true
             visible: full.client.serviceAvailable && full.client.present
             enabled: !full.client.busy
+            spacing: Kirigami.Units.smallSpacing
 
             Repeater {
                 model: full.audioModes
@@ -216,8 +235,9 @@ PlasmaExtras.Representation {
                 PlasmaComponents3.Button {
                     required property var modelData
 
-                    Layout.fillWidth: true
+                    width: (modeRow.width - modeRow.spacing) / 2
                     text: modelData.label
+                    icon.name: modelData.icon
                     highlighted: full.client.audioMode === modelData.id
                     onClicked: full.client.setAudioMode(modelData.id)
                 }

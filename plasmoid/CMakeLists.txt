@@ -35,6 +35,7 @@ install(FILES
         package/contents/icons/btd700ctl-connected-symbolic.svg
         package/contents/icons/btd700ctl-streaming-symbolic.svg
         package/contents/icons/btd700ctl-idle-symbolic.svg
+        package/contents/icons/btd700ctl-absent-symbolic.svg
         DESTINATION ${KDE_INSTALL_ICONDIR}/hicolor/symbolic/apps)
 
 add_subdirectory(tests)

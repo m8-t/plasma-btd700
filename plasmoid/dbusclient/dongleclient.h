@@ -24,6 +24,7 @@ class DongleClient : public QObject {
     Q_PROPERTY(QString firmwareVersion READ firmwareVersion NOTIFY firmwareVersionChanged)
     Q_PROPERTY(int headsetBattery READ headsetBattery NOTIFY headsetBatteryChanged)
     Q_PROPERTY(qint64 headsetBatteryUpdated READ headsetBatteryUpdated NOTIFY headsetBatteryUpdatedChanged)
+    Q_PROPERTY(bool batteryReading READ batteryReading NOTIFY batteryReadingChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString errorName READ errorName NOTIFY errorChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorChanged)
@@ -44,6 +45,7 @@ public:
     QString firmwareVersion() const { return m_firmwareVersion; }
     int headsetBattery() const { return m_headsetBattery; }
     qint64 headsetBatteryUpdated() const { return m_headsetBatteryUpdated; }
+    bool batteryReading() const { return m_batteryReading; }
     bool busy() const { return m_pending > 0; }
     QString errorName() const { return m_errorName; }
     QString errorMessage() const { return m_errorMessage; }
@@ -52,6 +54,7 @@ public:
     Q_INVOKABLE void setCodec(const QString& codec);
     Q_INVOKABLE void connectHeadphones();
     Q_INVOKABLE void refresh();
+    Q_INVOKABLE void setBatteryReading(bool enabled);
     Q_INVOKABLE void clearError();
 
 Q_SIGNALS:
@@ -68,6 +71,7 @@ Q_SIGNALS:
     void firmwareVersionChanged();
     void headsetBatteryChanged();
     void headsetBatteryUpdatedChanged();
+    void batteryReadingChanged();
     void busyChanged();
     void errorChanged();
 
@@ -103,6 +107,7 @@ private:
     QString m_firmwareVersion;
     int m_headsetBattery = -1;
     qint64 m_headsetBatteryUpdated = 0;
+    bool m_batteryReading = false;
     QString m_errorName;
     QString m_errorMessage;
 };

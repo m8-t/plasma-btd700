@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.kirigami as Kirigami
 import org.btd700ctl.dongle
@@ -62,6 +63,19 @@ PlasmoidItem {
     }
 
     Plasmoid.icon: iconName
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: i18n("Read Headphone Battery")
+            checkable: true
+            checked: dongle.batteryReading
+            enabled: dongle.serviceAvailable
+            onTriggered: {
+                dongle.setBatteryReading(checked);
+                // the click broke the binding, follow the daemon again
+                checked = Qt.binding(() => dongle.batteryReading);
+            }
+        }
+    ]
     toolTipMainText: stateText
     toolTipSubText: {
         const parts = [];

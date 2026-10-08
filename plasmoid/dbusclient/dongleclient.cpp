@@ -127,6 +127,8 @@ void DongleClient::applyProperty(const QString& name, const QVariant& v) {
         if (assign(m_headsetBattery, v.toInt())) emit headsetBatteryChanged();
     } else if (name == QLatin1String("HeadsetBatteryUpdated")) {
         if (assign(m_headsetBatteryUpdated, v.toLongLong())) emit headsetBatteryUpdatedChanged();
+    } else if (name == QLatin1String("BatteryReading")) {
+        if (assign(m_batteryReading, v.toBool())) emit batteryReadingChanged();
     }
 }
 
@@ -143,6 +145,7 @@ void DongleClient::resetProperties() {
     applyProperty(QStringLiteral("FirmwareVersion"), QString());
     applyProperty(QStringLiteral("HeadsetBattery"), -1);
     applyProperty(QStringLiteral("HeadsetBatteryUpdated"), qint64(0));
+    applyProperty(QStringLiteral("BatteryReading"), false);
 }
 
 void DongleClient::call(const QString& method, const QVariantList& args) {
@@ -182,3 +185,4 @@ void DongleClient::setAudioMode(const QString& mode) { call(QStringLiteral("SetA
 void DongleClient::setCodec(const QString& codec) { call(QStringLiteral("SetCodec"), {codec}); }
 void DongleClient::connectHeadphones() { call(QStringLiteral("Connect")); }
 void DongleClient::refresh() { call(QStringLiteral("Refresh")); }
+void DongleClient::setBatteryReading(bool enabled) { call(QStringLiteral("SetBatteryReading"), {enabled}); }

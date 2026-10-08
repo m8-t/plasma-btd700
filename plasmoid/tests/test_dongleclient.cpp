@@ -9,6 +9,7 @@
 #include <QDeadlineTimer>
 #include <QFile>
 #include <QProcess>
+#include <QTemporaryDir>
 
 #include <cstdio>
 #include <functional>
@@ -29,10 +30,12 @@ static void check(const char* what, bool ok) {
     if (!ok) g_failures++;
 }
 
-static QProcess* startDaemon(QObject* parent) {
+// stateDir keeps the daemon away from the real fallback sink and battery setting
+static QProcess* startDaemon(QObject* parent, const QString& stateDir) {
     auto* p = new QProcess(parent);
     p->setProcessChannelMode(QProcess::ForwardedErrorChannel);
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("XDG_STATE_HOME", stateDir);
     if (qEnvironmentVariableIsSet("BTD700_TEST_PRELOAD"))
         env.insert("LD_PRELOAD", qEnvironmentVariable("BTD700_TEST_PRELOAD"));
     p->setProcessEnvironment(env);
@@ -50,6 +53,12 @@ int main(int argc, char** argv) {
     const QString fakeDir = qEnvironmentVariable("BTD700_TEST_FAKE_DIR");
     const bool fake = !fakeDir.isEmpty();
 
+    QTemporaryDir stateDir;
+    if (!stateDir.isValid()) {
+        std::printf("FAIL: temporary state directory\n");
+        return 1;
+    }
+
     DongleClient c;
     waitFor([&] { return false; }, 300);
     check("no daemon: serviceAvailable false", !c.serviceAvailable());
@@ -59,11 +68,14 @@ int main(int argc, char** argv) {
           c.errorName() == "org.freedesktop.DBus.Error.ServiceUnknown" && !c.busy());
     c.clearError();
 
-    QProcess* d = startDaemon(&app);
+    QProcess* d = startDaemon(&app, stateDir.path());
     check("daemon appears", waitFor([&] { return c.serviceAvailable(); }, 5000));
     check("initial GetAll applied", waitFor([&] { return c.transport() == "disconnected"; }));
     check("no dongle: present false, state none", !c.present() && c.state() == "none");
     check("no dongle: battery unknown", c.headsetBattery() == -1 && c.headsetBatteryUpdated() == 0);
+    check("battery reading on by default", c.batteryReading());
+    c.setBatteryReading(false);
+    check("SetBatteryReading false", waitFor([&] { return !c.batteryReading(); }) && c.errorName().isEmpty());
 
     c.setCodec("sbc");
     check("busy while call pending", c.busy());
@@ -110,9 +122,12 @@ int main(int argc, char** argv) {
     check("daemon exit: state reset", !c.present() && c.supportedCodecs().isEmpty() && c.state() == "none"
           && c.headsetBattery() == -1);
 
-    d = startDaemon(&app);
+    d = startDaemon(&app, stateDir.path());
     check("daemon restart detected", waitFor([&] { return c.serviceAvailable(); }, 5000));
     check("restart: GetAll re-applied", waitFor([&] { return c.transport() != "unknown"; }));
+    check("restart: battery reading stays off", !c.batteryReading());
+    c.setBatteryReading(true);
+    check("SetBatteryReading true", waitFor([&] { return c.batteryReading(); }));
     if (fake)
         check("restart: dongle state restored", waitFor([&] { return c.present() && c.firmwareVersion() == "1.2.300"; }, 12000));
     stopDaemon(d);

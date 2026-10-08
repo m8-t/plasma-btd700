@@ -181,6 +181,7 @@ Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh
 
 - Broadcast (Auracast) mode is not offered in the applet, because switching to it drops the paired headphone link. It is still available with `SetAudioMode s broadcast` over D-Bus; broadcast name, key and quality are not exposed.
 - The set of supported codecs depends on the audio mode. In gaming mode the dongle offers aptX Adaptive only.
+- The sample rate shown is that of the Bluetooth link, as the dongle reports it, not what PipeWire sends over USB (`Momentary freq` in `/proc/asound/cardN/stream0`). With the HDB 630, aptX Adaptive reaches 96 kHz only while the Hi-Res setting is on in Sennheiser's Smart Control Plus app. In testing it was off again after the dongle had been reconnected through the app, and the applet showed 48 kHz although PipeWire sent 96 kHz.
 - The "gaming available" query is not answered by the dongle, so `GamingAvailable` stays false. Setting gaming mode works regardless.
 - Set `BTD700_DEBUG=1` in the daemon's environment to hex-dump every unsolicited dongle packet to stderr. Unrecognised event IDs are marked `UNKNOWN`.
 - Tested with dongle firmware 3.11.0.

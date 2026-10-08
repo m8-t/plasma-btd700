@@ -65,7 +65,7 @@ struct sockaddr_l2_le {
 #define DISCOVERY_POLL_MS    2000
 #define DISCOVERY_RETRY_MS   (10 * 60 * 1000)
 #define BUS_TIMEOUT_US       (2 * 1000 * 1000)
-#define FORGET_AFTER_TIMEOUTS 12
+#define RESCAN_AFTER_TIMEOUTS 12
 
 enum { R_IDLE, R_CONNECTING, R_WAITING };
 
@@ -77,7 +77,6 @@ static char g_setting_path[PATH_MAX];
 static int g_have_addr;
 static int g_addr_from_env;
 static char g_addr_str[18];
-static char g_rejected[18];   /* given up on, skipped by discovery until Refresh */
 static bt_addr_t g_addr;
 static uint8_t g_addr_type = BDADDR_LE_PUBLIC;
 
@@ -94,7 +93,9 @@ static int g_link_read;     /* the next read is the one at link-up */
 static long g_hold_until;   /* the sink switch waits until then, while that read runs */
 static long g_next_read;
 static int g_fails;
-static int g_timeouts;
+static int g_read_auto;     /* the running read started on its own, not from Refresh */
+static int g_timeouts;      /* such reads in a row that got no connection */
+static int g_rescan;        /* scan for the headphones although an address is known */
 
 static int g_rstate = R_IDLE;
 static int g_fd = -1;
@@ -197,13 +198,6 @@ static void load_setting(void) {
     fclose(fp);
 }
 
-static void forget_addr(void) {
-    snprintf(g_rejected, sizeof(g_rejected), "%s", g_addr_str);
-    g_have_addr = 0;
-    g_timeouts = 0;
-    if (g_cache_path[0]) unlink(g_cache_path);
-}
-
 /* ------------------------------------------------------------------------- */
 /* discovery through bluetoothd. An empty Pattern filter makes it report every
  * LE device, also the headphones, which do not set the discoverable flag while
@@ -291,8 +285,7 @@ static int parse_device(sd_bus_message* m, candidate_t* best, int* found) {
      * report their SDP UUIDs instead of the advertised one, hence the name.
      * The closest one wins if several Sennheiser devices are around. */
     if (!sonova && strncasecmp(c.name, "HDB", 3) == 0) sonova = 1;
-    if (sonova && have_rssi && c.addr[0] && strcasecmp(c.addr, g_rejected) != 0 &&
-        (!*found || c.rssi > best->rssi)) {
+    if (sonova && have_rssi && c.addr[0] && (!*found || c.rssi > best->rssi)) {
         *best = c;
         *found = 1;
     }
@@ -363,6 +356,7 @@ static void stop_discovery(void) {
     if (g_sys) adapter_call(g_disc_adapter, "StopDiscovery", 1);
 }
 
+/* found while advertising, so read it right away */
 static int adopt_candidate(void) {
     candidate_t c;
     if (find_headset(&c) != 1) return 0;
@@ -371,13 +365,18 @@ static int adopt_candidate(void) {
     fprintf(stderr, "btd700d: found headphones %s (%s) over LE\n",
             g_addr_str, c.name[0] ? c.name : "no name");
     save_addr();
+    g_rescan = 0;
+    g_timeouts = 0;
+    g_requested = 1;
     return 1;
 }
 
-/* any failure here waits for the next link-up or Refresh */
+/* any failure here waits for the next link-up or Refresh, a known address stays */
 static void discovery_failed(void) {
     g_auto = 0;
     g_requested = 0;
+    g_rescan = 0;
+    g_timeouts = 0;
 }
 
 static void start_discovery(long now) {
@@ -470,7 +469,8 @@ static void read_ok(int level, long now) {
 static void read_failed(long now, const char* what, int err) {
     close_read();
     g_fails++;
-    if (err == ETIMEDOUT) g_timeouts++;
+    /* a Refresh after audio played is expected to time out, it says nothing about the address */
+    if (err == ETIMEDOUT && g_read_auto) g_timeouts++;
     /* a timeout means they do not advertise, so retrying before the next link-up is pointless */
     if (err == ETIMEDOUT || g_fails >= 3) g_auto = 0;
     else g_next_read = now + RETRY_MS;
@@ -483,15 +483,18 @@ static void read_failed(long now, const char* what, int err) {
     fprintf(stderr, "btd700d: battery read from %s failed: %s%s%s%s\n", g_addr_str, what,
             err ? ": " : "", err ? strerror(err) : "", hint);
 
-    /* no connection at this address for a dozen tries in a row, maybe a different pair */
-    if (!g_addr_from_env && g_timeouts >= FORGET_AFTER_TIMEOUTS) {
-        fprintf(stderr, "btd700d: forgetting %s, will look for the headphones again\n", g_addr_str);
-        forget_addr();
+    /* no connection at this address for a dozen tries in a row, maybe a different pair.
+     * The scan keeps the address unless other Sennheiser headphones advertise. */
+    if (!g_addr_from_env && !g_rescan && g_timeouts >= RESCAN_AFTER_TIMEOUTS) {
+        fprintf(stderr, "btd700d: no connection to %s for %d tries, looking for other headphones\n",
+                g_addr_str, g_timeouts);
+        g_rescan = 1;
         g_disc_next_allowed = 0;
     }
 }
 
 static void start_read(long now) {
+    g_read_auto = g_auto;
     g_requested = 0;
     if (g_link_read) {
         g_link_read = 0;
@@ -618,6 +621,7 @@ static void step_read(long now) {
             return;
         }
         g_timeouts = 0;
+        g_rescan = 0;
 
         const uint8_t req[7] = { ATT_READ_BY_TYPE_REQ, 0x01, 0x00, 0xFF, 0xFF,
                                  UUID_BATTERY_LEVEL & 0xFF, UUID_BATTERY_LEVEL >> 8 };
@@ -751,11 +755,12 @@ void headset_set_enabled(int on) {
 int headset_enabled(void) { return g_enabled; }
 
 void headset_request_read(void) {
-    g_requested = 1;
-    g_next_read = 0;
     g_fails = 0;
     g_disc_next_allowed = 0;
-    g_rejected[0] = '\0';
+    /* a read or scan already running is the attempt asked for */
+    if (g_rstate != R_IDLE || g_discovering) return;
+    g_requested = 1;
+    g_next_read = 0;
 }
 
 void headset_tick(int up, int idle) {
@@ -773,6 +778,7 @@ void headset_tick(int up, int idle) {
         g_link_read = 1;
         g_fails = 0;
         g_next_read = now;
+        g_disc_next_allowed = 0;
     }
     /* once audio plays they stop advertising until switched off */
     if (!idle) {
@@ -795,9 +801,10 @@ void headset_tick(int up, int idle) {
         return;
     }
 
-    if (!idle || (!g_auto && !g_requested) || now < g_next_read) return;
+    if (!idle || (!g_auto && !g_requested && !g_rescan) || now < g_next_read) return;
 
-    if (g_have_addr) {
+    /* the read at link-up goes first even when a rescan is due */
+    if (g_have_addr && (g_link_read || !g_rescan)) {
         start_read(now);
     } else if (g_link_read) {
         /* discovery can block on the bus, let the sink switch go first */

@@ -24,8 +24,8 @@
                    headphones link to the dongle, before audio plays: the
                    HDB 630 stops advertising over LE once audio plays and
                    until it is switched off. Read again at an interval while
-                   nothing has played. Reset to -1 when the headphones leave
-                   the dongle.
+                   nothing has played and the reads succeed. Reset to -1 when
+                   the headphones leave the dongle.
   HeadsetBatteryUpdated
                    unix time in seconds of the HeadsetBattery reading, 0 if none
   BatteryReading   whether the battery is read at all, the user's choice set

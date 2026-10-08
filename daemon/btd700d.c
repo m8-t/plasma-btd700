@@ -1,3 +1,5 @@
+#include "headset.h"
+
 #include <btd700/btd700_c.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -30,6 +32,7 @@ typedef struct {
 } sink_t;
 
 static char g_fallback[SINK_NAME_MAX];
+static char g_state_dir[PATH_MAX];
 static char g_state_path[PATH_MAX];
 
 static int is_btd_name(const char* name) {
@@ -124,13 +127,18 @@ static void init_state_path(void) {
     const char* xdg = getenv("XDG_STATE_HOME");
     const char* home = getenv("HOME");
 
+    g_state_dir[0] = '\0';
     g_state_path[0] = '\0';
     if (xdg && xdg[0] == '/')
-        snprintf(g_state_path, sizeof(g_state_path), "%s/btd700d/fallback-sink", xdg);
+        snprintf(g_state_dir, sizeof(g_state_dir), "%s/btd700d", xdg);
     else if (home && home[0] == '/')
-        snprintf(g_state_path, sizeof(g_state_path), "%s/.local/state/btd700d/fallback-sink", home);
+        snprintf(g_state_dir, sizeof(g_state_dir), "%s/.local/state/btd700d", home);
     else
         fprintf(stderr, "btd700d: no state directory, fallback sink will not persist\n");
+
+    if (g_state_dir[0] &&
+        snprintf(g_state_path, sizeof(g_state_path), "%s/fallback-sink", g_state_dir) >= (int)sizeof(g_state_path))
+        g_state_path[0] = '\0';
 }
 
 static void mkdir_parents(const char* path) {
@@ -317,6 +325,8 @@ typedef struct {
     uint32_t depth;
     int gaming;
     char fw[32];
+    int battery;
+    uint64_t battery_time;
 } dongle_props_t;
 
 static const struct {
@@ -365,6 +375,7 @@ static int token_index(const char* const* table, size_t n, const char* s) {
 static void reset_props(void) {
     memset(&g_cur, 0, sizeof(g_cur));
     g_cur.mode = -1;
+    g_cur.battery = -1;
 }
 
 /* a failed gaming query is expected (see README), so it is not retried automatically */
@@ -448,7 +459,7 @@ static int refresh_dirty(void) {
 }
 
 static void flush_props(void) {
-    const char* names[11];
+    const char* names[13];
     size_t n = 0;
 
     if (g_cur.present != g_pub.present)     names[n++] = "Present";
@@ -461,6 +472,8 @@ static void flush_props(void) {
     if (g_cur.depth != g_pub.depth)         names[n++] = "BitDepth";
     if (g_cur.gaming != g_pub.gaming)       names[n++] = "GamingAvailable";
     if (strcmp(g_cur.fw, g_pub.fw) != 0)    names[n++] = "FirmwareVersion";
+    if (g_cur.battery != g_pub.battery)     names[n++] = "HeadsetBattery";
+    if (g_cur.battery_time != g_pub.battery_time) names[n++] = "HeadsetBatteryUpdated";
     g_pub = g_cur;
 
     if (n == 0 || !g_bus) return;
@@ -557,6 +570,10 @@ static int prop_get(sd_bus* bus, const char* path, const char* interface,
         return sd_bus_message_append(reply, "b", g_cur.gaming);
     if (strcmp(property, "FirmwareVersion") == 0)
         return sd_bus_message_append(reply, "s", g_cur.fw);
+    if (strcmp(property, "HeadsetBattery") == 0)
+        return sd_bus_message_append(reply, "i", (int32_t)g_cur.battery);
+    if (strcmp(property, "HeadsetBatteryUpdated") == 0)
+        return sd_bus_message_append(reply, "t", g_cur.battery_time);
     return -ENOENT;
 }
 
@@ -654,6 +671,7 @@ static int m_refresh(sd_bus_message* m, void* userdata, sd_bus_error* error) {
 
     g_gaming_broken = 0;
     g_dirty |= D_ALL;
+    headset_request_read();
     if (refresh_dirty() < 0)
         return sd_bus_error_set_const(error, ERR_FAILED, "refresh failed");
 
@@ -680,6 +698,8 @@ static const sd_bus_vtable k_vtable[] = {
     SD_BUS_PROPERTY("BitDepth", "u", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("GamingAvailable", "b", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("FirmwareVersion", "s", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
+    SD_BUS_PROPERTY("HeadsetBattery", "i", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
+    SD_BUS_PROPERTY("HeadsetBatteryUpdated", "t", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_VTABLE_END
 };
 
@@ -714,6 +734,7 @@ static void init_bus(void) {
 }
 
 static void bus_pump(void) {
+    headset_pump();
     if (!g_bus) return;
 
     int r;
@@ -748,6 +769,19 @@ static int try_connect(void) {
     return 0;
 }
 
+/* battery reads need the headphones on the dongle, and an LE connection only
+ * gets through while the dongle is not streaming */
+static void update_headset(void) {
+    int up = g_cur.present && (g_cur.state == BTD700_STATE_CONNECTED ||
+                               g_cur.state == BTD700_STATE_STREAMING_AUDIO ||
+                               g_cur.state == BTD700_STATE_STREAMING_VOICE);
+    int idle = g_cur.present && g_cur.state == BTD700_STATE_CONNECTED;
+
+    headset_tick(up, idle);
+    g_cur.battery = headset_battery();
+    g_cur.battery_time = headset_battery_time();
+}
+
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
@@ -770,6 +804,7 @@ int main(int argc, char* argv[]) {
     init_state_path();
     load_fallback();
     observe_default();
+    headset_init(g_state_dir);
     init_bus();
 
     long next_connect = 0;
@@ -813,12 +848,14 @@ int main(int argc, char* argv[]) {
             idle_wait(POLL_MS);
         }
 
+        update_headset();
         bus_pump();
         flush_props();
     }
 
     restore_sink(0);
     btd700_driver_disconnect(g_drv);
+    headset_shutdown();
     close_bus();
     btd700_driver_destroy(g_drv);
     fprintf(stderr, "btd700d: shutdown\n");

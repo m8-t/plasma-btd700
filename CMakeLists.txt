@@ -54,7 +54,7 @@ add_executable(btd700_example example.cpp)
 target_link_libraries(btd700_example PRIVATE btd700ctl::btd700ctl)
 
 # daemon
-add_executable(btd700d daemon/btd700d.c)
+add_executable(btd700d daemon/btd700d.c daemon/headset.c)
 target_link_libraries(btd700d PRIVATE btd700ctl::btd700ctl ${LIBSYSTEMD_LIBRARIES})
 target_include_directories(btd700d PRIVATE ${LIBSYSTEMD_INCLUDE_DIRS})
 target_compile_features(btd700d PRIVATE c_std_99)

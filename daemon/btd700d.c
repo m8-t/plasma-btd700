@@ -17,6 +17,7 @@
 
 static volatile sig_atomic_t g_running = 1;
 static int g_sink_switched = 0;
+static int g_switch_pending = 0;
 
 static void signal_handler(int sig) {
     (void)sig;
@@ -294,6 +295,18 @@ static void restore_sink(int force) {
         fprintf(stderr, "btd700d: cannot set default sink to %s\n", fb);
 }
 
+/* At link-up the battery read goes first: the headphones stop advertising over
+ * LE once audio plays, and switching the sink can start audio right away.
+ * headset_sink_hold() keeps this short, the main loop does the switch. */
+static void request_switch(btd700_dongle_state_t state) {
+    if (state == BTD700_STATE_CONNECTED && headset_enabled()) {
+        g_switch_pending = 1;
+        return;
+    }
+    g_switch_pending = 0;
+    switch_to_btd700();
+}
+
 #define DBUS_NAME  "org.btd700ctl.Dongle"
 #define DBUS_PATH  "/org/btd700ctl/Dongle"
 #define DBUS_IFACE "org.btd700ctl.Dongle1"
@@ -416,7 +429,7 @@ static int refresh_dirty(void) {
         if (g_check_sink_initial) {
             g_check_sink_initial = 0;
             if (st == BTD700_STATE_CONNECTED || st == BTD700_STATE_STREAMING_AUDIO)
-                switch_to_btd700();
+                request_switch(st);
         }
     }
 
@@ -509,9 +522,10 @@ static void on_event(const btd700_event_t* event, void* user_data) {
         switch (state) {
         case BTD700_STATE_CONNECTED:
         case BTD700_STATE_STREAMING_AUDIO:
-            switch_to_btd700();
+            request_switch(state);
             break;
         case BTD700_STATE_DISCONNECTED:
+            g_switch_pending = 0;
             restore_sink(1);
             break;
         default:
@@ -863,6 +877,7 @@ int main(int argc, char* argv[]) {
             if (err == BTD700_ERR_HID || err == BTD700_ERR_DEVICE_NOT_OPEN) {
                 fprintf(stderr, "btd700d: HID error, reconnecting...\n");
                 btd700_driver_disconnect(g_drv);
+                g_switch_pending = 0;
                 if (stable) restore_sink(0);
                 stable = 0;
                 g_dirty = 0;
@@ -878,6 +893,10 @@ int main(int argc, char* argv[]) {
         }
 
         update_headset();
+        if (g_switch_pending && !headset_sink_hold()) {
+            g_switch_pending = 0;
+            switch_to_btd700();
+        }
         bus_pump();
         flush_props();
     }

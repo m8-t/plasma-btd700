@@ -12,15 +12,22 @@ void headset_shutdown(void);
 
 /* call once per main loop iteration. up: the headphones are linked to the
  * dongle. idle: up and the dongle is not streaming, the only time a read is
- * attempted (the headphones do not answer LE connections while streaming). */
+ * attempted. The HDB 630 advertises over LE only from power-on until audio
+ * first plays, so reads start on their own at link-up and stop until the next
+ * link-up once the dongle has streamed or a read found them not advertising. */
 void headset_tick(int up, int idle);
+
+/* true while the read at link-up runs, at most a few seconds. The default sink
+ * switch waits for it, audio moving to the dongle would end the advertising. */
+int headset_sink_hold(void);
 
 /* the user's choice, stored in the state directory, on by default. turning it
  * off stops all LE activity and forgets the reading */
 void headset_set_enabled(int on);
 int headset_enabled(void);
 
-/* read at the next idle moment instead of waiting for the interval */
+/* one attempt at the next idle moment (a scan first if no address is known),
+ * also after audio played */
 void headset_request_read(void);
 
 /* processes the system bus connection used to discover the headphones */

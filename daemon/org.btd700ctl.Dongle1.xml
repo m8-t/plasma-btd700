@@ -18,11 +18,20 @@
   BitDepth         bits, 0 if unknown
   GamingAvailable  the underlying query is unreliable, false when it fails
   FirmwareVersion  "major.minor.build", empty if not read
+  HeadsetBattery   headphone battery level in percent, -1 if unknown. Read
+                   over Bluetooth LE through the PC's own adapter (standard
+                   Battery Level characteristic, no pairing) while the
+                   headphones are linked to the dongle and it is not streaming.
+                   Reset to -1 when the headphones leave the dongle.
+  HeadsetBatteryUpdated
+                   unix time in seconds of the HeadsetBattery reading, 0 if none
 
   Errors: org.freedesktop.DBus.Error.InvalidArgs (unknown mode or codec, codec
   not supported by the dongle), org.btd700ctl.Error.NotPresent (no dongle),
   org.btd700ctl.Error.Failed (HID failure).
   SetAudioMode keeps the current transport unchanged.
+  Refresh also reads the headphone battery at the next moment the dongle is
+  not streaming.
   Connect and Disconnect are plain HID triggers. The dongle re-establishes the
   link on its own while the headphones are powered on, so Disconnect effectively
   forces a reconnect.
@@ -66,6 +75,12 @@
    <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
   </property>
   <property name="FirmwareVersion" type="s" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="HeadsetBattery" type="i" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="HeadsetBatteryUpdated" type="t" access="read">
    <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
   </property>
  </interface>

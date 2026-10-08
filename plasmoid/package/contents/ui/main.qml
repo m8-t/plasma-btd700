@@ -65,6 +65,8 @@ PlasmoidItem {
     toolTipMainText: stateText
     toolTipSubText: {
         const parts = [];
+        if (linked && dongle.headsetBattery >= 0)
+            parts.push(i18n("Battery %1%", dongle.headsetBattery));
         if (linked && codecText.length > 0)
             parts.push(codecText);
         if (linked && rateText.length > 0)

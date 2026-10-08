@@ -63,6 +63,7 @@ int main(int argc, char** argv) {
     check("daemon appears", waitFor([&] { return c.serviceAvailable(); }, 5000));
     check("initial GetAll applied", waitFor([&] { return c.transport() == "disconnected"; }));
     check("no dongle: present false, state none", !c.present() && c.state() == "none");
+    check("no dongle: battery unknown", c.headsetBattery() == -1 && c.headsetBatteryUpdated() == 0);
 
     c.setCodec("sbc");
     check("busy while call pending", c.busy());
@@ -106,7 +107,8 @@ int main(int argc, char** argv) {
 
     stopDaemon(d);
     check("daemon exit: serviceAvailable false", waitFor([&] { return !c.serviceAvailable(); }));
-    check("daemon exit: state reset", !c.present() && c.supportedCodecs().isEmpty() && c.state() == "none");
+    check("daemon exit: state reset", !c.present() && c.supportedCodecs().isEmpty() && c.state() == "none"
+          && c.headsetBattery() == -1);
 
     d = startDaemon(&app);
     check("daemon restart detected", waitFor([&] { return c.serviceAvailable(); }, 5000));

@@ -22,6 +22,8 @@ class DongleClient : public QObject {
     Q_PROPERTY(uint bitDepth READ bitDepth NOTIFY bitDepthChanged)
     Q_PROPERTY(bool gamingAvailable READ gamingAvailable NOTIFY gamingAvailableChanged)
     Q_PROPERTY(QString firmwareVersion READ firmwareVersion NOTIFY firmwareVersionChanged)
+    Q_PROPERTY(int headsetBattery READ headsetBattery NOTIFY headsetBatteryChanged)
+    Q_PROPERTY(qint64 headsetBatteryUpdated READ headsetBatteryUpdated NOTIFY headsetBatteryUpdatedChanged)
     Q_PROPERTY(bool busy READ busy NOTIFY busyChanged)
     Q_PROPERTY(QString errorName READ errorName NOTIFY errorChanged)
     Q_PROPERTY(QString errorMessage READ errorMessage NOTIFY errorChanged)
@@ -40,6 +42,8 @@ public:
     uint bitDepth() const { return m_bitDepth; }
     bool gamingAvailable() const { return m_gamingAvailable; }
     QString firmwareVersion() const { return m_firmwareVersion; }
+    int headsetBattery() const { return m_headsetBattery; }
+    qint64 headsetBatteryUpdated() const { return m_headsetBatteryUpdated; }
     bool busy() const { return m_pending > 0; }
     QString errorName() const { return m_errorName; }
     QString errorMessage() const { return m_errorMessage; }
@@ -62,6 +66,8 @@ Q_SIGNALS:
     void bitDepthChanged();
     void gamingAvailableChanged();
     void firmwareVersionChanged();
+    void headsetBatteryChanged();
+    void headsetBatteryUpdatedChanged();
     void busyChanged();
     void errorChanged();
 
@@ -95,6 +101,8 @@ private:
     uint m_bitDepth = 0;
     bool m_gamingAvailable = false;
     QString m_firmwareVersion;
+    int m_headsetBattery = -1;
+    qint64 m_headsetBatteryUpdated = 0;
     QString m_errorName;
     QString m_errorMessage;
 };

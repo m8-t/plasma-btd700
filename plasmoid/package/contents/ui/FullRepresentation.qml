@@ -63,7 +63,8 @@ PlasmaExtras.Representation {
     Layout.minimumWidth: Kirigami.Units.gridUnit * 18
     Layout.minimumHeight: Kirigami.Units.gridUnit * 12
     Layout.preferredWidth: Kirigami.Units.gridUnit * 20
-    Layout.preferredHeight: Kirigami.Units.gridUnit * 24
+    Layout.preferredHeight: Math.min(Kirigami.Units.gridUnit * 30,
+        Math.max(Layout.minimumHeight, (header ? header.implicitHeight : 0) + topPadding + bottomPadding + column.implicitHeight))
 
     header: PlasmaExtras.PlasmoidHeading {
         RowLayout {
@@ -98,10 +99,14 @@ PlasmaExtras.Representation {
     contentItem: PlasmaComponents3.ScrollView {
         id: scroll
 
+        // explicit so the implicit width does not depend on availableWidth (binding loop)
+        implicitWidth: Kirigami.Units.gridUnit * 20
         contentWidth: availableWidth
         PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
 
         ColumnLayout {
+            id: column
+
             width: scroll.availableWidth
             height: Math.max(implicitHeight, scroll.availableHeight)
             spacing: Kirigami.Units.smallSpacing
@@ -243,8 +248,12 @@ PlasmaExtras.Representation {
                         height: width
                         text: modelData.label
                         icon.name: modelData.icon
-                        highlighted: full.client.audioMode === modelData.id
-                        onClicked: full.client.setAudioMode(modelData.id)
+
+                        // the Plasma style draws only down/checked/focus/hover, never highlighted;
+                        // down is driven from the daemon's value so a click cannot change it
+                        readonly property bool active: full.client.audioMode === modelData.id
+                        down: pressed || active
+                        onClicked: if (!active) full.client.setAudioMode(modelData.id)
 
                         // stock TextUnderIcon content stretches both cells and leaves a gap between icon and label
                         contentItem: Item {
@@ -291,9 +300,10 @@ PlasmaExtras.Representation {
                         required property string modelData
 
                         text: Codecs.displayName(modelData)
-                        icon.name: highlighted ? "object-select-symbolic" : ""
-                        highlighted: full.client.activeCodecs.indexOf(modelData) >= 0
-                        onClicked: full.client.setCodec(modelData)
+                        readonly property bool active: full.client.activeCodecs.indexOf(modelData) >= 0
+                        icon.name: active ? "object-select-symbolic" : ""
+                        down: pressed || active
+                        onClicked: if (!active) full.client.setCodec(modelData)
                     }
                 }
             }

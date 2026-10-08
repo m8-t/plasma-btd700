@@ -100,7 +100,6 @@ PlasmoidItem {
     fullRepresentation: FullRepresentation {
         client: dongle
         stateText: root.stateText
-        codecText: root.codecText
         rateText: root.rateText
     }
 }

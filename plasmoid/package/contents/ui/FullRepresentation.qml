@@ -13,22 +13,20 @@ PlasmaExtras.Representation {
 
     required property DongleClient client
     required property string stateText
-    required property string codecText
     required property string rateText
 
     readonly property bool headphonesUp: client.state === "connected"
         || client.state === "streaming-audio" || client.state === "streaming-voice"
 
+    readonly property bool daemonMissing: !client.serviceAvailable
+    readonly property bool dongleMissing: client.serviceAvailable && !client.present
+    readonly property bool noHeadphones: client.serviceAvailable && client.present && !headphonesUp
+    readonly property bool connected: client.serviceAvailable && client.present && headphonesUp
+
     readonly property var audioModes: [
         { id: "high-quality", label: i18n("High quality"), icon: "media-optical-audio-symbolic" },
         { id: "gaming", label: i18n("Gaming"), icon: "input-gamepad-symbolic" }
     ]
-
-    readonly property var modeLabels: ({
-        "high-quality": i18n("High quality"),
-        "gaming": i18n("Gaming"),
-        "broadcast": i18n("Broadcast")
-    })
 
     function transportText(token) {
         switch (token) {
@@ -43,10 +41,6 @@ PlasmaExtras.Representation {
         default:
             return i18n("Unknown");
         }
-    }
-
-    function modeText(token) {
-        return modeLabels[token] !== undefined ? modeLabels[token] : i18n("Unknown");
     }
 
     function errorText(name, message) {
@@ -64,9 +58,12 @@ PlasmaExtras.Representation {
         }
     }
 
+    collapseMarginsHint: false
+
     Layout.minimumWidth: Kirigami.Units.gridUnit * 18
     Layout.minimumHeight: Kirigami.Units.gridUnit * 12
     Layout.preferredWidth: Kirigami.Units.gridUnit * 20
+    Layout.preferredHeight: Kirigami.Units.gridUnit * 24
 
     header: PlasmaExtras.PlasmoidHeading {
         RowLayout {
@@ -75,7 +72,7 @@ PlasmaExtras.Representation {
             PlasmaExtras.Heading {
                 Layout.fillWidth: true
                 level: 3
-                text: full.stateText
+                text: full.connected ? full.stateText : ""
                 elide: Text.ElideRight
             }
 
@@ -98,185 +95,213 @@ PlasmaExtras.Representation {
         }
     }
 
-    contentItem: ColumnLayout {
-        spacing: Kirigami.Units.smallSpacing
+    contentItem: PlasmaComponents3.ScrollView {
+        id: scroll
 
-        Kirigami.InlineMessage {
-            Layout.fillWidth: true
-            type: Kirigami.MessageType.Error
-            visible: full.client.errorName.length > 0
-            text: full.errorText(full.client.errorName, full.client.errorMessage)
-            actions: [
-                Kirigami.Action {
-                    text: i18n("Dismiss")
-                    onTriggered: full.client.clearError()
-                }
-            ]
-        }
-
-        PlasmaExtras.PlaceholderMessage {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: !full.client.serviceAvailable
-            iconName: "dialog-warning"
-            text: i18n("The BTD 700 daemon is not running")
-            explanation: i18n("Start it with: systemctl --user enable --now btd700d.service")
-        }
+        contentWidth: availableWidth
+        PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
 
         ColumnLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: full.client.serviceAvailable && !full.client.present
-            spacing: Kirigami.Units.gridUnit
-
-            EmptyStateIcon {
-                source: Qt.resolvedUrl("../icons/btd700ctl-absent-symbolic.svg")
-                opacity: 0.75
-            }
-
-            PlasmaExtras.PlaceholderMessage {
-                Layout.fillWidth: true
-                text: i18n("Dongle not plugged in")
-                explanation: i18n("Plug in the BTD 700 USB dongle.")
-            }
-        }
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            visible: full.client.serviceAvailable && full.client.present && !full.headphonesUp
-            spacing: Kirigami.Units.gridUnit
-
-            EmptyStateIcon {
-                source: Qt.resolvedUrl("../icons/btd700ctl-idle-symbolic.svg")
-            }
-
-            PlasmaExtras.PlaceholderMessage {
-                Layout.fillWidth: true
-                text: i18n("Headphones not connected")
-                helpfulAction: Kirigami.Action {
-                    icon.name: "network-connect"
-                    text: i18n("Connect")
-                    enabled: !full.client.busy
-                    onTriggered: full.client.connectHeadphones()
-                }
-            }
-        }
-
-        GridLayout {
-            Layout.fillWidth: true
-            visible: full.client.serviceAvailable && full.client.present
-            columns: 2
-            columnSpacing: Kirigami.Units.largeSpacing
-
-            PlasmaComponents3.Label {
-                text: i18n("Codec")
-                opacity: 0.7
-            }
-            PlasmaComponents3.Label {
-                Layout.fillWidth: true
-                text: full.codecText.length > 0 ? full.codecText : "-"
-                elide: Text.ElideRight
-            }
-
-            PlasmaComponents3.Label {
-                text: i18n("Quality")
-                opacity: 0.7
-            }
-            PlasmaComponents3.Label {
-                Layout.fillWidth: true
-                text: full.rateText.length > 0 ? full.rateText : "-"
-            }
-
-            PlasmaComponents3.Label {
-                text: i18n("Audio mode")
-                opacity: 0.7
-            }
-            PlasmaComponents3.Label {
-                Layout.fillWidth: true
-                text: full.modeText(full.client.audioMode)
-            }
-
-            PlasmaComponents3.Label {
-                text: i18n("Transport")
-                opacity: 0.7
-            }
-            PlasmaComponents3.Label {
-                Layout.fillWidth: true
-                text: full.transportText(full.client.transport)
-            }
-
-            PlasmaComponents3.Label {
-                text: i18n("Firmware")
-                opacity: 0.7
-            }
-            PlasmaComponents3.Label {
-                Layout.fillWidth: true
-                text: full.client.firmwareVersion.length > 0 ? full.client.firmwareVersion : "-"
-            }
-        }
-
-        PlasmaExtras.Heading {
-            Layout.fillWidth: true
-            visible: full.client.serviceAvailable && full.client.present
-            level: 5
-            text: i18n("Audio mode")
-        }
-
-        Row {
-            Layout.alignment: Qt.AlignHCenter
-            visible: full.client.serviceAvailable && full.client.present
-            enabled: !full.client.busy
-            spacing: Kirigami.Units.largeSpacing
-
-            Repeater {
-                model: full.audioModes
-
-                PlasmaComponents3.Button {
-                    required property var modelData
-
-                    width: Kirigami.Units.gridUnit * 6
-                    height: width
-                    display: PlasmaComponents3.AbstractButton.TextUnderIcon
-                    icon.width: Kirigami.Units.iconSizes.large
-                    icon.height: Kirigami.Units.iconSizes.large
-                    text: modelData.label
-                    icon.name: modelData.icon
-                    highlighted: full.client.audioMode === modelData.id
-                    onClicked: full.client.setAudioMode(modelData.id)
-                }
-            }
-        }
-
-        PlasmaExtras.Heading {
-            Layout.fillWidth: true
-            visible: full.client.serviceAvailable && full.client.present
-                && full.client.supportedCodecs.length > 0
-            level: 5
-            text: i18n("Codec")
-        }
-
-        Flow {
-            Layout.fillWidth: true
-            visible: full.client.serviceAvailable && full.client.present
-            enabled: !full.client.busy
+            width: scroll.availableWidth
+            height: Math.max(implicitHeight, scroll.availableHeight)
             spacing: Kirigami.Units.smallSpacing
 
-            Repeater {
-                model: full.client.supportedCodecs
+            Kirigami.InlineMessage {
+                Layout.fillWidth: true
+                type: Kirigami.MessageType.Error
+                visible: full.client.errorName.length > 0
+                text: full.errorText(full.client.errorName, full.client.errorMessage)
+                actions: [
+                    Kirigami.Action {
+                        text: i18n("Dismiss")
+                        onTriggered: full.client.clearError()
+                    }
+                ]
+            }
 
-                PlasmaComponents3.Button {
-                    required property string modelData
+            PlasmaExtras.PlaceholderMessage {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: full.daemonMissing
+                iconName: "dialog-warning"
+                text: i18n("The BTD 700 daemon is not running")
+                explanation: i18n("Start it with: systemctl --user enable --now btd700d.service")
+            }
 
-                    text: Codecs.displayName(modelData)
-                    icon.name: highlighted ? "object-select-symbolic" : ""
-                    highlighted: full.client.activeCodecs.indexOf(modelData) >= 0
-                    onClicked: full.client.setCodec(modelData)
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: full.dongleMissing
+                spacing: Kirigami.Units.gridUnit
+
+                Item {
+                    Layout.fillHeight: true
+                }
+
+                EmptyStateIcon {
+                    source: Qt.resolvedUrl("../icons/btd700ctl-absent-symbolic.svg")
+                    opacity: 0.75
+                }
+
+                PlasmaExtras.PlaceholderMessage {
+                    Layout.fillWidth: true
+                    text: i18n("Dongle not plugged in")
+                    explanation: i18n("Plug in the BTD 700 USB dongle.")
+                }
+
+                Item {
+                    Layout.fillHeight: true
                 }
             }
-        }
 
-        Item {
-            Layout.fillHeight: true
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: full.noHeadphones
+                spacing: Kirigami.Units.gridUnit
+
+                Item {
+                    Layout.fillHeight: true
+                }
+
+                EmptyStateIcon {
+                    source: Qt.resolvedUrl("../icons/btd700ctl-idle-symbolic.svg")
+                }
+
+                PlasmaExtras.PlaceholderMessage {
+                    Layout.fillWidth: true
+                    text: i18n("Headphones not connected")
+                    helpfulAction: Kirigami.Action {
+                        icon.name: "network-connect"
+                        text: i18n("Connect")
+                        enabled: !full.client.busy
+                        onTriggered: full.client.connectHeadphones()
+                    }
+                }
+
+                Item {
+                    Layout.fillHeight: true
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                visible: full.connected
+                columns: 2
+                columnSpacing: Kirigami.Units.largeSpacing
+
+                PlasmaComponents3.Label {
+                    text: i18n("Quality")
+                    opacity: 0.7
+                }
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    text: full.rateText.length > 0 ? full.rateText : "-"
+                }
+
+                PlasmaComponents3.Label {
+                    text: i18n("Transport")
+                    opacity: 0.7
+                }
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    text: full.transportText(full.client.transport)
+                }
+
+                PlasmaComponents3.Label {
+                    text: i18n("Firmware")
+                    opacity: 0.7
+                }
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    text: full.client.firmwareVersion.length > 0 ? full.client.firmwareVersion : "-"
+                }
+            }
+
+            PlasmaExtras.Heading {
+                Layout.fillWidth: true
+                visible: full.connected
+                level: 5
+                text: i18n("Audio mode")
+            }
+
+            Row {
+                Layout.alignment: Qt.AlignHCenter
+                visible: full.connected
+                enabled: !full.client.busy
+                spacing: Kirigami.Units.largeSpacing
+
+                Repeater {
+                    model: full.audioModes
+
+                    PlasmaComponents3.Button {
+                        id: tile
+
+                        required property var modelData
+
+                        width: Kirigami.Units.gridUnit * 5
+                        height: width
+                        text: modelData.label
+                        icon.name: modelData.icon
+                        highlighted: full.client.audioMode === modelData.id
+                        onClicked: full.client.setAudioMode(modelData.id)
+
+                        // stock TextUnderIcon content stretches both cells and leaves a gap between icon and label
+                        contentItem: Item {
+                            Column {
+                                anchors.centerIn: parent
+                                width: parent.width
+
+                                Kirigami.Icon {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    width: Kirigami.Units.iconSizes.large
+                                    height: width
+                                    source: tile.icon.name
+                                }
+
+                                PlasmaComponents3.Label {
+                                    width: parent.width
+                                    horizontalAlignment: Text.AlignHCenter
+                                    elide: Text.ElideRight
+                                    text: tile.text
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            PlasmaExtras.Heading {
+                Layout.fillWidth: true
+                visible: full.connected && full.client.supportedCodecs.length > 0
+                level: 5
+                text: i18n("Codec")
+            }
+
+            Flow {
+                Layout.fillWidth: true
+                visible: full.connected
+                enabled: !full.client.busy
+                spacing: Kirigami.Units.smallSpacing
+
+                Repeater {
+                    model: full.client.supportedCodecs
+
+                    PlasmaComponents3.Button {
+                        required property string modelData
+
+                        text: Codecs.displayName(modelData)
+                        icon.name: highlighted ? "object-select-symbolic" : ""
+                        highlighted: full.client.activeCodecs.indexOf(modelData) >= 0
+                        onClicked: full.client.setCodec(modelData)
+                    }
+                }
+            }
+
+            Item {
+                Layout.fillHeight: true
+                visible: full.connected
+            }
         }
     }
 }

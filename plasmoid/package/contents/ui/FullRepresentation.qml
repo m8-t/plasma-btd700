@@ -223,11 +223,10 @@ PlasmaExtras.Representation {
         }
 
         Row {
-            id: modeRow
-            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignHCenter
             visible: full.client.serviceAvailable && full.client.present
             enabled: !full.client.busy
-            spacing: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.largeSpacing
 
             Repeater {
                 model: full.audioModes
@@ -235,7 +234,11 @@ PlasmaExtras.Representation {
                 PlasmaComponents3.Button {
                     required property var modelData
 
-                    width: (modeRow.width - modeRow.spacing) / 2
+                    width: Kirigami.Units.gridUnit * 6
+                    height: width
+                    display: PlasmaComponents3.AbstractButton.TextUnderIcon
+                    icon.width: Kirigami.Units.iconSizes.large
+                    icon.height: Kirigami.Units.iconSizes.large
                     text: modelData.label
                     icon.name: modelData.icon
                     highlighted: full.client.audioMode === modelData.id

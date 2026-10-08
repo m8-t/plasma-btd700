@@ -200,8 +200,11 @@ static void forget_addr(void) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* discovery through bluetoothd: a UUID filter also reports the headphones,
- * which do not set the LE discoverable flag while linked */
+/* discovery through bluetoothd. An empty Pattern filter makes it report every
+ * LE device, also the headphones, which do not set the discoverable flag while
+ * linked; the Sennheiser UUID is checked here. No UUIDs filter: bluetoothd
+ * 5.87 crashes on it (is_filter_match passes queue_find's arguments in the
+ * wrong order, fixed in later BlueZ). */
 
 /* what may be NULL to stay quiet. never auto-starts a bluetoothd the user stopped */
 static int bluez_call(sd_bus_message* m, sd_bus_message** reply, const char* what) {
@@ -348,10 +351,11 @@ static int find_headset(candidate_t* best) {
     return found;
 }
 
+/* quiet: bluetoothd has forgotten the scan anyway if it restarted meanwhile */
 static void stop_discovery(void) {
     if (!g_discovering) return;
     g_discovering = 0;
-    if (g_sys) adapter_call(g_disc_adapter, "StopDiscovery", 0);
+    if (g_sys) adapter_call(g_disc_adapter, "StopDiscovery", 1);
 }
 
 static int adopt_candidate(void) {
@@ -387,8 +391,8 @@ static void start_discovery(long now) {
                                            "org.bluez.Adapter1", "SetDiscoveryFilter");
     if (r >= 0)
         r = sd_bus_message_append(m, "a{sv}", 2,
-                                  "UUIDs", "as", 1, SONOVA_SERVICE_UUID,
-                                  "Transport", "s", "le");
+                                  "Transport", "s", "le",
+                                  "Pattern", "s", "");
     if (r >= 0) r = bluez_call(m, NULL, "SetDiscoveryFilter");
     sd_bus_message_unref(m);
 

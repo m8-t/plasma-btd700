@@ -123,6 +123,10 @@ void DongleClient::applyProperty(const QString& name, const QVariant& v) {
         if (assign(m_gamingAvailable, v.toBool())) emit gamingAvailableChanged();
     } else if (name == QLatin1String("FirmwareVersion")) {
         if (assign(m_firmwareVersion, v.toString())) emit firmwareVersionChanged();
+    } else if (name == QLatin1String("HeadsetBattery")) {
+        if (assign(m_headsetBattery, v.toInt())) emit headsetBatteryChanged();
+    } else if (name == QLatin1String("HeadsetBatteryUpdated")) {
+        if (assign(m_headsetBatteryUpdated, v.toLongLong())) emit headsetBatteryUpdatedChanged();
     }
 }
 
@@ -137,6 +141,8 @@ void DongleClient::resetProperties() {
     applyProperty(QStringLiteral("BitDepth"), 0u);
     applyProperty(QStringLiteral("GamingAvailable"), false);
     applyProperty(QStringLiteral("FirmwareVersion"), QString());
+    applyProperty(QStringLiteral("HeadsetBattery"), -1);
+    applyProperty(QStringLiteral("HeadsetBatteryUpdated"), qint64(0));
 }
 
 void DongleClient::call(const QString& method, const QVariantList& args) {

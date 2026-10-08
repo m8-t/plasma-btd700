@@ -56,6 +56,7 @@ struct sockaddr_l2_le {
 
 #define DEFAULT_INTERVAL_S   300
 #define MIN_INTERVAL_S       60
+#define MAX_INTERVAL_S       (7L * 24 * 3600)
 #define SETTLE_MS            15000   /* after the headphones link up */
 #define IDLE_SETTLE_MS       5000    /* after the dongle stops streaming */
 #define RETRY_MS             60000
@@ -69,13 +70,15 @@ struct sockaddr_l2_le {
 
 enum { R_IDLE, R_CONNECTING, R_WAITING };
 
-static int g_enabled;
-static long g_interval_ms;
+static int g_enabled = 1;
+static long g_interval_ms = DEFAULT_INTERVAL_S * 1000L;
 static char g_cache_path[PATH_MAX];
+static char g_setting_path[PATH_MAX];
 
 static int g_have_addr;
 static int g_addr_from_env;
 static char g_addr_str[18];
+static char g_rejected[18];   /* given up on, skipped by discovery until Refresh */
 static bt_addr_t g_addr;
 static uint8_t g_addr_type = BDADDR_LE_PUBLIC;
 
@@ -94,6 +97,7 @@ static long g_deadline;
 
 static sd_bus* g_sys;
 static char g_adapter[64];
+static char g_disc_adapter[64];
 static int g_discovering;
 static long g_disc_deadline;
 static long g_disc_next_poll;
@@ -163,7 +167,33 @@ static void load_addr(void) {
     fclose(fp);
 }
 
+static void save_setting(void) {
+    if (!g_setting_path[0]) return;
+
+    mkdir_parents(g_setting_path);
+    FILE* fp = fopen(g_setting_path, "w");
+    if (!fp) {
+        fprintf(stderr, "btd700d: cannot write %s: %s\n", g_setting_path, strerror(errno));
+        return;
+    }
+    fprintf(fp, "%s\n", g_enabled ? "on" : "off");
+    if (fclose(fp) != 0)
+        fprintf(stderr, "btd700d: cannot write %s: %s\n", g_setting_path, strerror(errno));
+}
+
+static void load_setting(void) {
+    if (!g_setting_path[0]) return;
+
+    FILE* fp = fopen(g_setting_path, "r");
+    if (!fp) return;
+
+    char word[8] = "";
+    if (fscanf(fp, "%7s", word) == 1 && strcmp(word, "off") == 0) g_enabled = 0;
+    fclose(fp);
+}
+
 static void forget_addr(void) {
+    snprintf(g_rejected, sizeof(g_rejected), "%s", g_addr_str);
     g_have_addr = 0;
     g_timeouts = 0;
     if (g_cache_path[0]) unlink(g_cache_path);
@@ -173,20 +203,22 @@ static void forget_addr(void) {
 /* discovery through bluetoothd: a UUID filter also reports the headphones,
  * which do not set the LE discoverable flag while linked */
 
+/* what may be NULL to stay quiet. never auto-starts a bluetoothd the user stopped */
 static int bluez_call(sd_bus_message* m, sd_bus_message** reply, const char* what) {
     sd_bus_error err = SD_BUS_ERROR_NULL;
+    sd_bus_message_set_auto_start(m, 0);
     int r = sd_bus_call(g_sys, m, BUS_TIMEOUT_US, &err, reply);
-    if (r < 0)
+    if (r < 0 && what)
         fprintf(stderr, "btd700d: %s: %s\n", what, err.message ? err.message : strerror(-r));
     sd_bus_error_free(&err);
     return r;
 }
 
-static int adapter_call(const char* member) {
+static int adapter_call(const char* adapter, const char* member, int quiet) {
     sd_bus_message* m = NULL;
-    int r = sd_bus_message_new_method_call(g_sys, &m, "org.bluez", g_adapter,
+    int r = sd_bus_message_new_method_call(g_sys, &m, "org.bluez", adapter,
                                            "org.bluez.Adapter1", member);
-    if (r >= 0) r = bluez_call(m, NULL, member);
+    if (r >= 0) r = bluez_call(m, NULL, quiet ? NULL : member);
     sd_bus_message_unref(m);
     return r;
 }
@@ -200,7 +232,7 @@ typedef struct {
 
 static int parse_device(sd_bus_message* m, candidate_t* best, int* found) {
     candidate_t c = { .type = BDADDR_LE_PUBLIC, .rssi = -128 };
-    int sonova = 0;
+    int sonova = 0, have_rssi = 0;
     const char* s;
 
     int r = sd_bus_message_enter_container(m, 'a', "{sv}");
@@ -222,7 +254,10 @@ static int parse_device(sd_bus_message* m, candidate_t* best, int* found) {
         } else if (strcmp(key, "RSSI") == 0) {
             int16_t rssi;
             r = sd_bus_message_read(m, "v", "n", &rssi);
-            if (r >= 0) c.rssi = rssi;
+            if (r >= 0) {
+                c.rssi = rssi;
+                have_rssi = 1;
+            }
         } else if (strcmp(key, "UUIDs") == 0) {
             r = sd_bus_message_enter_container(m, 'v', "as");
             if (r >= 0) r = sd_bus_message_enter_container(m, 'a', "s");
@@ -243,15 +278,21 @@ static int parse_device(sd_bus_message* m, candidate_t* best, int* found) {
     r = sd_bus_message_exit_container(m);
     if (r < 0) return r;
 
-    /* the closest one wins if several Sennheiser devices are around */
-    if (sonova && c.addr[0] && (!*found || c.rssi > best->rssi)) {
+    /* Only devices advertising right now count (bluetoothd drops RSSI after a
+     * scan), so a stale entry is never picked. Headphones paired over BR/EDR
+     * report their SDP UUIDs instead of the advertised one, hence the name.
+     * The closest one wins if several Sennheiser devices are around. */
+    if (!sonova && strncasecmp(c.name, "HDB", 3) == 0) sonova = 1;
+    if (sonova && have_rssi && c.addr[0] && strcasecmp(c.addr, g_rejected) != 0 &&
+        (!*found || c.rssi > best->rssi)) {
         *best = c;
         *found = 1;
     }
     return 0;
 }
 
-static int parse_interfaces(sd_bus_message* m, const char* path, candidate_t* best, int* found) {
+static int parse_interfaces(sd_bus_message* m, const char* path, char* adapter, size_t adapter_size,
+                            candidate_t* best, int* found) {
     int r = sd_bus_message_enter_container(m, 'a', "{sa{sv}}");
     if (r < 0) return r;
     while ((r = sd_bus_message_enter_container(m, 'e', "sa{sv}")) > 0) {
@@ -259,8 +300,8 @@ static int parse_interfaces(sd_bus_message* m, const char* path, candidate_t* be
         r = sd_bus_message_read(m, "s", &iface);
         if (r < 0) return r;
 
-        if (strcmp(iface, "org.bluez.Adapter1") == 0 && !g_adapter[0])
-            snprintf(g_adapter, sizeof(g_adapter), "%s", path);
+        if (strcmp(iface, "org.bluez.Adapter1") == 0 && !adapter[0])
+            snprintf(adapter, adapter_size, "%s", path);
 
         if (strcmp(iface, "org.bluez.Device1") == 0)
             r = parse_device(m, best, found);
@@ -276,13 +317,14 @@ static int parse_interfaces(sd_bus_message* m, const char* path, candidate_t* be
 }
 
 /* looks for a Sennheiser device in bluetoothd's object tree, also records the
- * first adapter. returns 1 if found, 0 if not, negative on error */
+ * first adapter (only from a complete reply). returns 1 if found, 0 if not,
+ * negative on error */
 static int find_headset(candidate_t* best) {
     sd_bus_message* m = NULL;
     sd_bus_message* reply = NULL;
+    char adapter[sizeof(g_adapter)] = "";
     int found = 0;
 
-    g_adapter[0] = '\0';
     int r = sd_bus_message_new_method_call(g_sys, &m, "org.bluez", "/",
                                            "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
     if (r >= 0) r = bluez_call(m, &reply, "GetManagedObjects");
@@ -293,7 +335,7 @@ static int find_headset(candidate_t* best) {
     while (r >= 0 && (r = sd_bus_message_enter_container(reply, 'e', "oa{sa{sv}}")) > 0) {
         const char* path;
         r = sd_bus_message_read(reply, "o", &path);
-        if (r >= 0) r = parse_interfaces(reply, path, best, &found);
+        if (r >= 0) r = parse_interfaces(reply, path, adapter, sizeof(adapter), best, &found);
         if (r >= 0) r = sd_bus_message_exit_container(reply);
     }
     sd_bus_message_unref(reply);
@@ -302,13 +344,14 @@ static int find_headset(candidate_t* best) {
         fprintf(stderr, "btd700d: cannot parse bluetoothd objects: %s\n", strerror(-r));
         return r;
     }
+    memcpy(g_adapter, adapter, sizeof(g_adapter));
     return found;
 }
 
 static void stop_discovery(void) {
     if (!g_discovering) return;
     g_discovering = 0;
-    if (g_sys) adapter_call("StopDiscovery");
+    if (g_sys) adapter_call(g_disc_adapter, "StopDiscovery", 0);
 }
 
 static int adopt_candidate(void) {
@@ -348,7 +391,13 @@ static void start_discovery(long now) {
                                   "Transport", "s", "le");
     if (r >= 0) r = bluez_call(m, NULL, "SetDiscoveryFilter");
     sd_bus_message_unref(m);
-    if (r < 0 || adapter_call("StartDiscovery") < 0) {
+
+    memcpy(g_disc_adapter, g_adapter, sizeof(g_disc_adapter));
+    if (r >= 0) r = adapter_call(g_disc_adapter, "StartDiscovery", 0);
+    /* a late reply may still have started the scan, so let the deadline stop it */
+    if (r < 0 && r != -ETIMEDOUT) {
+        /* clears a scan of ours bluetoothd might still hold (it then says InProgress) */
+        adapter_call(g_disc_adapter, "StopDiscovery", 1);
         fprintf(stderr, "btd700d: LE scan failed, is Bluetooth on and LE enabled "
                         "(ControllerMode in /etc/bluetooth/main.conf)?\n");
         return;
@@ -405,7 +454,8 @@ static void read_failed(long now, const char* what, int err) {
 
     const char* hint = "";
     if (err == ECONNREFUSED) hint = " (Bluetooth LE disabled on the PC adapter?)";
-    else if (err == EAFNOSUPPORT || err == EHOSTUNREACH || err == ENODEV) hint = " (no Bluetooth adapter?)";
+    else if (err == EAFNOSUPPORT || err == EHOSTUNREACH || err == ENODEV) hint = " (no Bluetooth adapter or it is off?)";
+    else if (err == ENOSYS || err == ENOTCONN) hint = " (the headphones did not complete the connection, busy with audio?)";
     if (g_fails <= 3 || g_fails % 12 == 0)
         fprintf(stderr, "btd700d: battery read from %s failed: %s%s%s%s\n", g_addr_str, what,
                 err ? ": " : "", err ? strerror(err) : "", hint);
@@ -575,26 +625,26 @@ static void step_read(long now) {
 
 void headset_init(const char* state_dir) {
     const char* iv = getenv("BTD700_BATTERY_INTERVAL");
-    long interval = DEFAULT_INTERVAL_S;
     if (iv && iv[0]) {
         char* end = NULL;
-        interval = strtol(iv, &end, 10);
-        if (*end != '\0' || interval < 0) {
+        errno = 0;
+        long interval = strtol(iv, &end, 10);
+        if (*end != '\0' || errno == ERANGE || interval <= 0) {
             fprintf(stderr, "btd700d: BTD700_BATTERY_INTERVAL=%s is not a number of seconds, using %d\n",
                     iv, DEFAULT_INTERVAL_S);
             interval = DEFAULT_INTERVAL_S;
         }
+        if (interval < MIN_INTERVAL_S) interval = MIN_INTERVAL_S;
+        if (interval > MAX_INTERVAL_S) interval = MAX_INTERVAL_S;
+        g_interval_ms = interval * 1000;
     }
-    if (interval == 0) {
-        fprintf(stderr, "btd700d: headphone battery reading disabled\n");
-        return;
-    }
-    if (interval < MIN_INTERVAL_S) interval = MIN_INTERVAL_S;
-    g_interval_ms = interval * 1000;
-    g_enabled = 1;
 
-    if (state_dir && state_dir[0])
+    if (state_dir && state_dir[0]) {
         snprintf(g_cache_path, sizeof(g_cache_path), "%s/headset", state_dir);
+        snprintf(g_setting_path, sizeof(g_setting_path), "%s/battery-reading", state_dir);
+    }
+    load_setting();
+    if (!g_enabled) fprintf(stderr, "btd700d: headphone battery reading is off\n");
 
     const char* env = getenv("BTD700_HEADSET_ADDRESS");
     if (env && env[0]) {
@@ -645,10 +695,35 @@ void headset_pump(void) {
     }
 }
 
+static void reset_reading(void) {
+    close_read();
+    stop_discovery();
+    g_was_up = 0;
+    g_was_idle = 0;
+    g_battery = -1;
+    g_battery_time = 0;
+}
+
+void headset_set_enabled(int on) {
+    on = on ? 1 : 0;
+    if (on == g_enabled) return;
+
+    g_enabled = on;
+    save_setting();
+    fprintf(stderr, "btd700d: headphone battery reading turned %s\n", on ? "on" : "off");
+    /* when turned on, the next tick treats the headphones as freshly linked */
+    reset_reading();
+    g_fails = 0;
+    g_disc_next_allowed = 0;
+}
+
+int headset_enabled(void) { return g_enabled; }
+
 void headset_request_read(void) {
     g_next_read = 0;
     g_fails = 0;
     g_disc_next_allowed = 0;
+    g_rejected[0] = '\0';
 }
 
 void headset_tick(int up, int idle) {
@@ -656,12 +731,7 @@ void headset_tick(int up, int idle) {
     long now = mono_ms();
 
     if (!up) {
-        close_read();
-        stop_discovery();
-        g_was_up = 0;
-        g_was_idle = 0;
-        g_battery = -1;
-        g_battery_time = 0;
+        reset_reading();
         return;
     }
 

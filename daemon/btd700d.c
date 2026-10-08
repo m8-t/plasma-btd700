@@ -327,6 +327,7 @@ typedef struct {
     char fw[32];
     int battery;
     uint64_t battery_time;
+    int battery_reading;
 } dongle_props_t;
 
 static const struct {
@@ -372,10 +373,13 @@ static int token_index(const char* const* table, size_t n, const char* s) {
     return -1;
 }
 
+/* battery_reading is a setting, not dongle state, so it survives a reset */
 static void reset_props(void) {
+    int reading = g_cur.battery_reading;
     memset(&g_cur, 0, sizeof(g_cur));
     g_cur.mode = -1;
     g_cur.battery = -1;
+    g_cur.battery_reading = reading;
 }
 
 /* a failed gaming query is expected (see README), so it is not retried automatically */
@@ -459,7 +463,7 @@ static int refresh_dirty(void) {
 }
 
 static void flush_props(void) {
-    const char* names[13];
+    const char* names[14];
     size_t n = 0;
 
     if (g_cur.present != g_pub.present)     names[n++] = "Present";
@@ -474,6 +478,7 @@ static void flush_props(void) {
     if (strcmp(g_cur.fw, g_pub.fw) != 0)    names[n++] = "FirmwareVersion";
     if (g_cur.battery != g_pub.battery)     names[n++] = "HeadsetBattery";
     if (g_cur.battery_time != g_pub.battery_time) names[n++] = "HeadsetBatteryUpdated";
+    if (g_cur.battery_reading != g_pub.battery_reading) names[n++] = "BatteryReading";
     g_pub = g_cur;
 
     if (n == 0 || !g_bus) return;
@@ -574,6 +579,8 @@ static int prop_get(sd_bus* bus, const char* path, const char* interface,
         return sd_bus_message_append(reply, "i", (int32_t)g_cur.battery);
     if (strcmp(property, "HeadsetBatteryUpdated") == 0)
         return sd_bus_message_append(reply, "t", g_cur.battery_time);
+    if (strcmp(property, "BatteryReading") == 0)
+        return sd_bus_message_append(reply, "b", g_cur.battery_reading);
     return -ENOENT;
 }
 
@@ -664,6 +671,24 @@ static int m_disconnect(sd_bus_message* m, void* userdata, sd_bus_error* error) 
     return set_done(m);
 }
 
+static void sync_headset_props(void) {
+    g_cur.battery = headset_battery();
+    g_cur.battery_time = headset_battery_time();
+    g_cur.battery_reading = headset_enabled();
+}
+
+/* works without a dongle, it only stores the choice */
+static int m_set_battery_reading(sd_bus_message* m, void* userdata, sd_bus_error* error) {
+    (void)userdata; (void)error;
+    int on = 0;
+    int r = sd_bus_message_read(m, "b", &on);
+    if (r < 0) return r;
+
+    headset_set_enabled(on);
+    sync_headset_props();
+    return sd_bus_reply_method_return(m, NULL);
+}
+
 static int m_refresh(sd_bus_message* m, void* userdata, sd_bus_error* error) {
     (void)userdata;
     int r = require_present(error);
@@ -688,6 +713,8 @@ static const sd_bus_vtable k_vtable[] = {
     SD_BUS_METHOD("Connect", "", "", m_connect, SD_BUS_VTABLE_UNPRIVILEGED),
     SD_BUS_METHOD("Disconnect", "", "", m_disconnect, SD_BUS_VTABLE_UNPRIVILEGED),
     SD_BUS_METHOD("Refresh", "", "", m_refresh, SD_BUS_VTABLE_UNPRIVILEGED),
+    SD_BUS_METHOD_WITH_ARGS("SetBatteryReading", SD_BUS_ARGS("b", enabled), SD_BUS_NO_RESULT,
+                            m_set_battery_reading, SD_BUS_VTABLE_UNPRIVILEGED),
     SD_BUS_PROPERTY("Present", "b", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("State", "s", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("AudioMode", "s", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
@@ -700,6 +727,7 @@ static const sd_bus_vtable k_vtable[] = {
     SD_BUS_PROPERTY("FirmwareVersion", "s", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("HeadsetBattery", "i", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_PROPERTY("HeadsetBatteryUpdated", "t", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
+    SD_BUS_PROPERTY("BatteryReading", "b", prop_get, 0, SD_BUS_VTABLE_PROPERTY_EMITS_CHANGE),
     SD_BUS_VTABLE_END
 };
 
@@ -778,8 +806,7 @@ static void update_headset(void) {
     int idle = g_cur.present && g_cur.state == BTD700_STATE_CONNECTED;
 
     headset_tick(up, idle);
-    g_cur.battery = headset_battery();
-    g_cur.battery_time = headset_battery_time();
+    sync_headset_props();
 }
 
 int main(int argc, char* argv[]) {
@@ -805,6 +832,8 @@ int main(int argc, char* argv[]) {
     load_fallback();
     observe_default();
     headset_init(g_state_dir);
+    sync_headset_props();
+    g_pub = g_cur;
     init_bus();
 
     long next_connect = 0;

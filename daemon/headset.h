@@ -15,6 +15,11 @@ void headset_shutdown(void);
  * attempted (the headphones do not answer LE connections while streaming). */
 void headset_tick(int up, int idle);
 
+/* the user's choice, stored in the state directory, on by default. turning it
+ * off stops all LE activity and forgets the reading */
+void headset_set_enabled(int on);
+int headset_enabled(void);
+
 /* read at the next idle moment instead of waiting for the interval */
 void headset_request_read(void);
 

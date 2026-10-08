@@ -25,13 +25,17 @@
                    Reset to -1 when the headphones leave the dongle.
   HeadsetBatteryUpdated
                    unix time in seconds of the HeadsetBattery reading, 0 if none
+  BatteryReading   whether the battery is read at all, the user's choice set
+                   with SetBatteryReading and stored in the state directory.
+                   On by default. When off, btd700d does no LE scans or
+                   connections and HeadsetBattery stays -1.
 
   Errors: org.freedesktop.DBus.Error.InvalidArgs (unknown mode or codec, codec
   not supported by the dongle), org.btd700ctl.Error.NotPresent (no dongle),
   org.btd700ctl.Error.Failed (HID failure).
   SetAudioMode keeps the current transport unchanged.
   Refresh also reads the headphone battery at the next moment the dongle is
-  not streaming.
+  not streaming. SetBatteryReading works with or without a dongle.
   Connect and Disconnect are plain HID triggers. The dongle re-establishes the
   link on its own while the headphones are powered on, so Disconnect effectively
   forces a reconnect.
@@ -47,6 +51,9 @@
   <method name="Connect"/>
   <method name="Disconnect"/>
   <method name="Refresh"/>
+  <method name="SetBatteryReading">
+   <arg type="b" name="enabled" direction="in"/>
+  </method>
   <property name="Present" type="b" access="read">
    <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
   </property>
@@ -81,6 +88,9 @@
    <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
   </property>
   <property name="HeadsetBatteryUpdated" type="t" access="read">
+   <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
+  </property>
+  <property name="BatteryReading" type="b" access="read">
    <annotation name="org.freedesktop.DBus.Property.EmitsChangeSignal" value="true"/>
   </property>
  </interface>

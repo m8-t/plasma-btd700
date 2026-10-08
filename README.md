@@ -15,23 +15,24 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 - Switch audio mode: high quality or gaming (low latency)
 - Select the codec from the ones the dongle currently offers
 - Connect headphones that are powered on but not linked to the dongle
+- Headphone battery level, read over Bluetooth LE through the PC's own adapter, without pairing and without taking one of the headphones' multipoint slots (see [Headphone battery](#headphone-battery))
 - Switches the default audio sink to the dongle when the headphones connect and back to your previous sink when they disconnect
 - Everything is also available on the session D-Bus, so scripts and other desktops can use it
 
 Not available:
 
-- Headphone battery level. The dongle does not report it over its HID protocol, and the headphones pair with the dongle, not with the host's Bluetooth stack. Reading it through the PC's own Bluetooth adapter was tried too: headphones linked to the dongle and a phone (multipoint) did not show up in a scan from the PC, so there was nothing to connect to.
-- Headphone settings such as noise cancellation (ANC). Those are sent by the vendor's phone app straight to the headphones over a private protocol; the dongle has no pass-through for them. The headphones are only visible to the PC's own Bluetooth adapter in pairing mode, and pairing it would take one of their two multipoint slots.
+- Headphone settings such as noise cancellation (ANC). The vendor's phone app sends them straight to the headphones (Qualcomm GAIA), and the dongle has no pass-through. Over the PC's own adapter the headphones refuse these channels on an unpaired LE connection. An LE-only pairing was tested: it needs pairing mode, which drops the dongle and the phone, the GAIA requests still went unanswered, and the headphones rejected the PC's key after a power cycle. Not worth it.
 - Firmware updates
 - BTD 600 (it has no control protocol)
 
 ## How it works
 
 ```
-Plasma applet  --D-Bus-->  btd700d  --USB HID-->  BTD 700
-(plasmoid/)                (daemon/)   via libbtd700ctl (src/)
-                              |
-                              +-- pactl: default sink switching
+Plasma applet  --D-Bus-->  btd700d  --USB HID-->  BTD 700  ==Bluetooth==>  headphones
+(plasmoid/)                (daemon/)   via libbtd700ctl (src/)                 ^
+                              |                                                |
+                              +-- pactl: default sink switching                |
+                              +-- PC Bluetooth adapter, LE: battery level -----+
 ```
 
 `btd700d` is the only process that opens the dongle. Command responses and unsolicited events share one HID stream, so a second reader would steal responses. The applet never touches the device and talks to the daemon over D-Bus only.
@@ -40,6 +41,7 @@ Plasma applet  --D-Bus-->  btd700d  --USB HID-->  BTD 700
 
 - Linux with PipeWire and pipewire-pulse (`pactl` at runtime)
 - hidapi (hidraw backend), libsystemd
+- For the battery level: a Bluetooth adapter in the PC with LE enabled, and bluetoothd to find the headphones once
 - For the applet: Plasma 6, Qt 6, extra-cmake-modules
 - A C99 and C++ compiler, cmake
 
@@ -95,6 +97,24 @@ The fallback is chosen in this order, and the choice is logged:
 
 The dongle keeps powered-on headphones connected. If the link is dropped with `Disconnect()`, the dongle re-establishes it on its own a moment later, and no reliable way was found to hold the headphones disconnected from the host side. To move audio away from the dongle, switch the headphones off (the default sink then moves to the fallback) or pick another output device.
 
+## Headphone battery
+
+The dongle does not report the headphones' battery, but the HDB 630 offers the standard Bluetooth Battery Service over LE, readable without pairing. btd700d reads it through the PC's own Bluetooth adapter:
+
+- Only while the headphones are connected to the dongle and the dongle is not streaming. In testing the headphones did not accept the LE connection while audio played, so the last value stays during playback; the applet adds its age once it is older than 10 minutes.
+- Every 5 minutes, and 15 seconds after the headphones connect, it opens a short unpaired LE connection, reads the Battery Level characteristic and disconnects. The headphones drop unpaired LE links after about 30 seconds anyway. No multipoint slot is used, the dongle and a phone stay connected.
+- The headphones' LE address is found once through bluetoothd, by scanning for the Sennheiser (Sonova) service UUID `0xFCFE`, and stored in `$XDG_STATE_HOME/btd700d/headset`. With several Sennheiser devices around, the strongest signal wins. `BTD700_HEADSET_ADDRESS=AA:BB:CC:DD:EE:FF` skips the scan (append `/random` for a random static address).
+- `BTD700_BATTERY_INTERVAL=<seconds>` changes the interval (minimum 60), `0` turns the feature off.
+
+If no battery level shows up:
+
+- LE must be enabled on the PC adapter: `sudo btmgmt info` has to list `le` under current settings. `ControllerMode = bredr` in `/etc/bluetooth/main.conf` turns it off; use `dual`.
+- The dongle has to go idle when nothing plays. A WirePlumber rule that keeps the BTD 700 sink awake (`session.suspend-timeout-seconds = 0`, `node.pause-on-idle = false`) makes it stream silence, and then no reading happens. It also costs headphone battery.
+- Do not pair the headphones with the PC. A bonded LE link made them invisible to the PC after a power cycle in testing, and pairing mode drops the dongle and the phone.
+- `journalctl --user -u btd700d` shows which headphones were found and why reads failed.
+
+Tested with the HDB 630. Other Sennheiser headphones that advertise `0xFCFE` and the Battery Service may work too.
+
 ## D-Bus API
 
 Session bus name `org.btd700ctl.Dongle`, object `/org/btd700ctl/Dongle`, interface `org.btd700ctl.Dongle1`. The name is claimed even when no dongle is plugged in (`Present` is false). Full interface: [daemon/org.btd700ctl.Dongle1.xml](daemon/org.btd700ctl.Dongle1.xml).
@@ -119,10 +139,12 @@ busctl --user monitor org.btd700ctl.Dongle
 | `BitDepth` | u | bits, 0 if unknown |
 | `GamingAvailable` | b | unreliable, see below |
 | `FirmwareVersion` | s | `major.minor.build` |
+| `HeadsetBattery` | i | headphone battery in percent, -1 if unknown |
+| `HeadsetBatteryUpdated` | t | unix time of the battery reading, 0 if none |
 
 All properties are read-only and emit `PropertiesChanged`.
 
-Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`. `Connect` and `Disconnect` are plain triggers; after `Disconnect` the dongle reconnects by itself. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
+Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`. `Connect` and `Disconnect` are plain triggers; after `Disconnect` the dongle reconnects by itself. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. `Refresh` also reads the headphone battery at the next moment the dongle is not streaming. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
 
 ## Notes
 
@@ -141,7 +163,7 @@ Changes made in this fork (October 2026):
 - `daemon/btd700d.c`: D-Bus API, reworked main loop, `pactl` based sink handling with a persisted fallback sink
 - `src/btd700.c`: optional debug dump of unsolicited packets (`BTD700_DEBUG`)
 - `CMakeLists.txt`: libsystemd dependency, `BUILD_PLASMOID` option
-- new: `daemon/org.btd700ctl.Dongle1.xml`, `plasmoid/`
+- new: `daemon/org.btd700ctl.Dongle1.xml`, `daemon/headset.c` (battery level over Bluetooth LE), `plasmoid/`
 - `README.md` rewritten
 
 The changes in this fork were written with AI assistance (Claude Code) and tested by the maintainer on real hardware.

@@ -45,12 +45,24 @@ Plasma applet  --D-Bus-->  btd700d  --USB HID-->  BTD 700  ==Bluetooth==>  headp
 - For the applet: Plasma 6, Qt 6, extra-cmake-modules
 - A C99 and C++ compiler, cmake
 
+## Build and install
+
+### Arch Linux
+
+`packaging/arch/PKGBUILD` builds the package `plasma-btd700-git` from the current `main` branch, with the daemon, the applet and the udev rule. makepkg fetches the sources itself, so the folder with the PKGBUILD and its `.install` file is all it needs. With `base-devel` and `git` installed:
+
 ```bash
-# Arch
-sudo pacman -S base-devel cmake hidapi libpulse extra-cmake-modules libplasma kirigami qt6-declarative
+git clone https://github.com/m8-t/plasma-btd700.git
+cd plasma-btd700/packaging/arch
+makepkg -si
+systemctl --user enable --now btd700d.service
 ```
 
-## Build and install
+Replug the dongle once so the udev rule applies, then add the applet as described [below](#adding-the-applet). To update, run `makepkg -si` in the same folder again, it pulls the latest `main`, and restart as described under [After an update](#after-an-update). The built package can also go into a local pacman repository with `repo-add`.
+
+### Other distributions
+
+Install the dependencies listed under [Requirements](#requirements), then:
 
 ```bash
 cmake -B build -S . -DBUILD_PLASMOID=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
@@ -74,9 +86,13 @@ Start the daemon:
 systemctl --user enable --now btd700d.service
 ```
 
-Then add "BTD 700 Dongle" through the panel's "Add Widgets", or enable it under system tray settings, "Entries". If it is not listed right after installing, restart the shell once: `systemctl --user restart plasma-plasmashell`.
+### Adding the applet
 
-After an update, restart both parts, otherwise they keep running the old version. Package managers do not do this for user services:
+Add "BTD 700 Dongle" through the panel's "Add Widgets", or enable it under system tray settings, "Entries". If it is not listed right after installing, restart the shell once: `systemctl --user restart plasma-plasmashell`.
+
+### After an update
+
+Restart both parts, otherwise they keep running the old version. Package managers do not do this for user services:
 
 ```bash
 systemctl --user restart btd700d.service
@@ -85,7 +101,7 @@ systemctl --user restart plasma-plasmashell
 
 The daemon restart covers changes to btd700d, the shell restart loads the new applet. `journalctl --user -u btd700d` shows a new process ID after the restart.
 
-To try the applet without installing it:
+### Trying the applet without installing it
 
 ```bash
 ./build/btd700d &
@@ -178,7 +194,7 @@ Changes made in this fork (October 2026):
 - `daemon/btd700d.c`: D-Bus API, reworked main loop, `pactl` based sink handling with a persisted fallback sink
 - `src/btd700.c`: optional debug dump of unsolicited packets (`BTD700_DEBUG`)
 - `CMakeLists.txt`: libsystemd dependency, `BUILD_PLASMOID` option
-- new: `daemon/org.btd700ctl.Dongle1.xml`, `daemon/headset.c` (battery level over Bluetooth LE), `plasmoid/`
+- new: `daemon/org.btd700ctl.Dongle1.xml`, `daemon/headset.c` (battery level over Bluetooth LE), `plasmoid/`, `packaging/arch/` (Arch Linux package)
 - `README.md` rewritten
 
 The changes in this fork were written with AI assistance (Claude Code) and tested by the maintainer on real hardware.

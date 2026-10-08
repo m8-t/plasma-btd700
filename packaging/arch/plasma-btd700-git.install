@@ -1,0 +1,10 @@
+post_install() {
+  echo '==> Start the daemon for your user: systemctl --user enable --now btd700d.service'
+  echo '==> Replug the dongle once so the udev rule applies.'
+}
+
+post_upgrade() {
+  echo '==> Restart the daemon and the shell to load the new version:'
+  echo '    systemctl --user restart btd700d.service'
+  echo '    systemctl --user restart plasma-plasmashell'
+}

@@ -15,7 +15,7 @@ This is a fork of [sobalap/btd700ctl](https://github.com/sobalap/btd700ctl), whi
 - Switch audio mode: high quality or gaming (low latency)
 - Select the codec from the ones the dongle currently offers
 - Connect headphones that are powered on but not linked to the dongle
-- Headphone battery level when the headphones are switched on, read over Bluetooth LE through the PC's own adapter, without pairing and without taking one of the headphones' multipoint slots (see [Headphone battery](#headphone-battery))
+- Headphone battery level when the headphones are switched on (best effort), read over Bluetooth LE through the PC's own adapter, without pairing and without taking one of the headphones' multipoint slots (see [Headphone battery](#headphone-battery))
 - Switches the default audio sink to the dongle when the headphones connect and back to your previous sink when they disconnect
 - Everything is also available on the session D-Bus, so scripts and other desktops can use it
 
@@ -76,6 +76,15 @@ systemctl --user enable --now btd700d.service
 
 Then add "BTD 700 Dongle" through the panel's "Add Widgets", or enable it under system tray settings, "Entries". If it is not listed right after installing, restart the shell once: `systemctl --user restart plasma-plasmashell`.
 
+After an update, restart both parts, otherwise they keep running the old version. Package managers do not do this for user services:
+
+```bash
+systemctl --user restart btd700d.service
+systemctl --user restart plasma-plasmashell
+```
+
+The daemon restart covers changes to btd700d, the shell restart loads the new applet. `journalctl --user -u btd700d` shows a new process ID after the restart.
+
 To try the applet without installing it:
 
 ```bash
@@ -99,7 +108,9 @@ The dongle keeps powered-on headphones connected. If the link is dropped with `D
 
 ## Headphone battery
 
-The dongle does not report the headphones' battery, but the HDB 630 offers the standard Bluetooth Battery Service over LE, readable without pairing. btd700d reads it through the PC's own Bluetooth adapter:
+The dongle does not report the headphones' battery, but the HDB 630 offers the standard Bluetooth Battery Service over LE, readable without pairing. btd700d reads it through the PC's own Bluetooth adapter.
+
+Treat it as best effort. It relies on undocumented behaviour of the headphones, the value is a snapshot from when they were switched on, and it can be missing, for example when audio starts too early or the headphones briefly refuse the connection. How it works:
 
 - When the headphones connect to the dongle, usually right after switching them on, it opens a short unpaired LE connection, reads the Battery Level characteristic and disconnects, typically within a second. No multipoint slot is used, the dongle and a phone stay connected.
 - The HDB 630 stops advertising over LE as soon as audio plays through the dongle, and starts again only after it is switched off and on (tested for 20 minutes of silence, with and without the phone). So once the headphones' address is known, the default sink moves to the dongle only after that first reading, waiting at most 3 seconds for it. On the very first connection the address is not known yet: the sink switches right away and the scan follows, so play nothing at all then. Once audio has played btd700d does not try again until the headphones connect anew. The applet keeps showing the last value and adds its age once it is older than 10 minutes, for example "80% (2 hours ago)".
@@ -113,6 +124,7 @@ If no battery level shows up:
 - LE must be enabled on the PC adapter: `sudo btmgmt info` has to list `le` under current settings. `ControllerMode = bredr` in `/etc/bluetooth/main.conf` turns it off; use `dual`.
 - Nothing may play to the dongle when the headphones connect. An app bound to the BTD 700 sink, or a WirePlumber rule that keeps the sink awake (`session.suspend-timeout-seconds = 0`, `node.pause-on-idle = false`, which makes it stream silence and also costs headphone battery), ends the advertising before the reading. The same happens when the headphones come back into range after playing: switch them off and on with nothing playing.
 - Do not pair the headphones with the PC. A bonded LE link made them invisible to the PC after a power cycle in testing, and pairing mode drops the dongle and the phone.
+- `connect: Function not implemented` in the log means the headphones were seen but did not accept the connection. btd700d tries again after a minute, up to two more times, as long as nothing plays.
 - `journalctl --user -u btd700d` shows which headphones were found and why reads failed.
 
 Tested with the HDB 630. Other Sennheiser headphones that advertise `0xFCFE` and the Battery Service may work too.

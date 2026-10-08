@@ -14,6 +14,7 @@ PlasmaExtras.Representation {
     required property DongleClient client
     required property string stateText
     required property string rateText
+    required property string batteryText
 
     readonly property bool headphonesUp: client.state === "connected"
         || client.state === "streaming-audio" || client.state === "streaming-voice"
@@ -22,23 +23,6 @@ PlasmaExtras.Representation {
     readonly property bool dongleMissing: client.serviceAvailable && !client.present
     readonly property bool noHeadphones: client.serviceAvailable && client.present && !headphonesUp
     readonly property bool connected: client.serviceAvailable && client.present && headphonesUp
-
-    readonly property bool batteryKnown: client.headsetBattery >= 0
-
-    // unix seconds, ticks while a reading is shown so its age stays current
-    property real nowSeconds: Date.now() / 1000
-
-    readonly property string batteryText: {
-        if (!batteryKnown)
-            return "";
-        const level = i18n("%1%", client.headsetBattery);
-        const minutes = Math.floor((nowSeconds - client.headsetBatteryUpdated) / 60);
-        if (minutes < 10)
-            return level;
-        const age = minutes < 60 ? i18np("%1 minute ago", "%1 minutes ago", minutes)
-                                 : i18np("%1 hour ago", "%1 hours ago", Math.floor(minutes / 60));
-        return i18nc("battery level, age of the reading", "%1 (%2)", level, age);
-    }
 
     readonly property var audioModes: [
         { id: "high-quality", label: i18n("High quality"), icon: "media-optical-audio-symbolic" },
@@ -76,21 +60,6 @@ PlasmaExtras.Representation {
     }
 
     collapseMarginsHint: false
-
-    Timer {
-        interval: 60000
-        repeat: true
-        triggeredOnStart: true
-        running: full.connected && full.batteryKnown
-        onTriggered: full.nowSeconds = Date.now() / 1000
-    }
-
-    Connections {
-        target: full.client
-        function onHeadsetBatteryUpdatedChanged() {
-            full.nowSeconds = Date.now() / 1000;
-        }
-    }
 
     Layout.minimumWidth: Kirigami.Units.gridUnit * 18
     Layout.minimumHeight: Kirigami.Units.gridUnit * 12
@@ -228,13 +197,13 @@ PlasmaExtras.Representation {
                 columnSpacing: Kirigami.Units.largeSpacing
 
                 PlasmaComponents3.Label {
-                    visible: full.batteryKnown
+                    visible: full.batteryText.length > 0
                     text: i18n("Battery")
                     opacity: 0.7
                 }
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
-                    visible: full.batteryKnown
+                    visible: full.batteryText.length > 0
                     text: full.batteryText
                 }
 

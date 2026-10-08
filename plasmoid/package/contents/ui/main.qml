@@ -54,6 +54,37 @@ PlasmoidItem {
 
     readonly property string codecText: dongle.activeCodecs.map(Codecs.displayName).join(", ")
 
+    // unix seconds, ticks while a reading is shown so its age stays current
+    property real nowSeconds: Date.now() / 1000
+
+    // the daemon cannot read the battery while the dongle streams, so say how old the value is
+    readonly property string batteryText: {
+        if (!linked || dongle.headsetBattery < 0)
+            return "";
+        const level = i18n("%1%", dongle.headsetBattery);
+        const minutes = Math.floor((nowSeconds - dongle.headsetBatteryUpdated) / 60);
+        if (minutes < 10)
+            return level;
+        const age = minutes < 60 ? i18np("%1 minute ago", "%1 minutes ago", minutes)
+                                 : i18np("%1 hour ago", "%1 hours ago", Math.floor(minutes / 60));
+        return i18nc("battery level, age of the reading", "%1 (%2)", level, age);
+    }
+
+    Timer {
+        interval: 60000
+        repeat: true
+        triggeredOnStart: true
+        running: root.batteryText.length > 0
+        onTriggered: root.nowSeconds = Date.now() / 1000
+    }
+
+    Connections {
+        target: dongle
+        function onHeadsetBatteryUpdatedChanged() {
+            root.nowSeconds = Date.now() / 1000;
+        }
+    }
+
     readonly property string rateText: {
         if (dongle.sampleRate === 0)
             return "";
@@ -69,9 +100,10 @@ PlasmoidItem {
             checkable: true
             checked: dongle.batteryReading
             enabled: dongle.serviceAvailable
-            onTriggered: {
-                dongle.setBatteryReading(checked);
-                // the click broke the binding, follow the daemon again
+            onTriggered: (on) => {
+                dongle.setBatteryReading(on);
+                // the click toggled checked behind the binding, re-evaluate it so the
+                // entry shows the daemon's value even if the call fails
                 checked = Qt.binding(() => dongle.batteryReading);
             }
         }
@@ -79,8 +111,8 @@ PlasmoidItem {
     toolTipMainText: stateText
     toolTipSubText: {
         const parts = [];
-        if (linked && dongle.headsetBattery >= 0)
-            parts.push(i18n("Battery %1%", dongle.headsetBattery));
+        if (batteryText.length > 0)
+            parts.push(i18nc("@info:tooltip battery level with optional age", "Battery %1", batteryText));
         if (linked && codecText.length > 0)
             parts.push(codecText);
         if (linked && rateText.length > 0)
@@ -117,5 +149,6 @@ PlasmoidItem {
         client: dongle
         stateText: root.stateText
         rateText: root.rateText
+        batteryText: root.batteryText
     }
 }

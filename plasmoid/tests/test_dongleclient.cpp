@@ -6,6 +6,9 @@
 #include "dongleclient.h"
 
 #include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDBusMessage>
+#include <QDBusReply>
 #include <QDeadlineTimer>
 #include <QFile>
 #include <QProcess>
@@ -71,6 +74,20 @@ int main(int argc, char** argv) {
     QProcess* d = startDaemon(&app, stateDir.path());
     check("daemon appears", waitFor([&] { return c.serviceAvailable(); }, 5000));
     check("initial GetAll applied", waitFor([&] { return c.transport() == "disconnected"; }));
+
+    // the client defaults equal the daemon's, so check the wire types directly
+    QDBusMessage getAll = QDBusMessage::createMethodCall("org.btd700ctl.Dongle", "/org/btd700ctl/Dongle",
+                                                         "org.freedesktop.DBus.Properties", "GetAll");
+    getAll << QStringLiteral("org.btd700ctl.Dongle1");
+    const QDBusReply<QVariantMap> props = QDBusConnection::sessionBus().call(getAll);
+    check("GetAll: HeadsetBattery i -1, HeadsetBatteryUpdated t 0, BatteryReading b true",
+          props.isValid()
+          && props.value().value("HeadsetBattery").userType() == QMetaType::Int
+          && props.value().value("HeadsetBattery").toInt() == -1
+          && props.value().value("HeadsetBatteryUpdated").userType() == QMetaType::ULongLong
+          && props.value().value("HeadsetBatteryUpdated").toULongLong() == 0
+          && props.value().value("BatteryReading").userType() == QMetaType::Bool
+          && props.value().value("BatteryReading").toBool());
     check("no dongle: present false, state none", !c.present() && c.state() == "none");
     check("no dongle: battery unknown", c.headsetBattery() == -1 && c.headsetBatteryUpdated() == 0);
     check("battery reading on by default", c.batteryReading());

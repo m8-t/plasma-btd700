@@ -89,6 +89,7 @@ static uint64_t g_battery_time;
 static int g_was_up;
 static int g_auto;          /* reads may start on their own */
 static int g_requested;     /* Refresh asked for one read */
+static int g_found_read;    /* a scan just found them advertising, read before audio plays */
 static int g_link_read;     /* the next read is the one at link-up */
 static long g_hold_until;   /* the sink switch waits until then, while that read runs */
 static long g_next_read;
@@ -105,6 +106,7 @@ static sd_bus* g_sys;
 static char g_adapter[64];
 static char g_disc_adapter[64];
 static int g_discovering;
+static int g_disc_streamed; /* the dongle streamed since the scan started */
 static long g_disc_deadline;
 static long g_disc_next_poll;
 static long g_disc_next_allowed;
@@ -356,7 +358,7 @@ static void stop_discovery(void) {
     if (g_sys) adapter_call(g_disc_adapter, "StopDiscovery", 1);
 }
 
-/* found while advertising, so read it right away */
+/* found while advertising, so read right away unless audio played meanwhile */
 static int adopt_candidate(void) {
     candidate_t c;
     if (find_headset(&c) != 1) return 0;
@@ -367,7 +369,7 @@ static int adopt_candidate(void) {
     save_addr();
     g_rescan = 0;
     g_timeouts = 0;
-    g_requested = 1;
+    if (!g_disc_streamed) g_found_read = 1;
     return 1;
 }
 
@@ -383,6 +385,7 @@ static void start_discovery(long now) {
     if (now < g_disc_next_allowed) return;
     g_disc_next_allowed = now + DISCOVERY_RETRY_MS;
     g_link_read = 0;
+    g_disc_streamed = 0;
 
     if (!g_sys) {
         fprintf(stderr, "btd700d: no system bus, cannot look for the headphones over LE "
@@ -496,6 +499,7 @@ static void read_failed(long now, const char* what, int err) {
 static void start_read(long now) {
     g_read_auto = g_auto;
     g_requested = 0;
+    g_found_read = 0;
     if (g_link_read) {
         g_link_read = 0;
         g_hold_until = now + HOLD_MS;
@@ -734,6 +738,7 @@ static void reset_reading(void) {
     g_was_up = 0;
     g_auto = 0;
     g_requested = 0;
+    g_found_read = 0;
     g_link_read = 0;
     g_battery = -1;
     g_battery_time = 0;
@@ -784,6 +789,8 @@ void headset_tick(int up, int idle) {
     if (!idle) {
         g_auto = 0;
         g_link_read = 0;
+        g_found_read = 0;
+        g_disc_streamed = 1;
     }
 
     if (g_discovering) {
@@ -801,7 +808,7 @@ void headset_tick(int up, int idle) {
         return;
     }
 
-    if (!idle || (!g_auto && !g_requested && !g_rescan) || now < g_next_read) return;
+    if (!idle || (!g_auto && !g_requested && !g_found_read && !g_rescan) || now < g_next_read) return;
 
     /* the read at link-up goes first even when a rescan is due */
     if (g_have_addr && (g_link_read || !g_rescan)) {

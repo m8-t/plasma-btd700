@@ -26,7 +26,8 @@ int headset_sink_hold(void);
 void headset_set_enabled(int on);
 int headset_enabled(void);
 
-/* one read at the next idle moment, also after audio played */
+/* one attempt at the next idle moment (a scan first if no address is known),
+ * also after audio played */
 void headset_request_read(void);
 
 /* processes the system bus connection used to discover the headphones */

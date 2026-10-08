@@ -57,8 +57,7 @@ struct sockaddr_l2_le {
 #define DEFAULT_INTERVAL_S   300
 #define MIN_INTERVAL_S       60
 #define MAX_INTERVAL_S       (7L * 24 * 3600)
-#define SETTLE_MS            15000   /* after the headphones link up */
-#define IDLE_SETTLE_MS       5000    /* after the dongle stops streaming */
+#define HOLD_MS              3000    /* longest the sink switch waits for the read at link-up */
 #define RETRY_MS             60000
 #define CONNECT_TIMEOUT_MS   15000
 #define RESPONSE_TIMEOUT_MS  5000
@@ -85,8 +84,14 @@ static uint8_t g_addr_type = BDADDR_LE_PUBLIC;
 static int g_battery = -1;
 static uint64_t g_battery_time;
 
+/* The HDB 630 advertises over LE from power-on until audio first plays through
+ * the dongle, then not again until it is switched off. So reads start on their
+ * own only in that window, and the one at link-up goes before the sink switch. */
 static int g_was_up;
-static int g_was_idle;
+static int g_auto;          /* reads may start on their own */
+static int g_requested;     /* Refresh asked for one read */
+static int g_link_read;     /* the next read is the one at link-up */
+static long g_hold_until;   /* the sink switch waits until then, while that read runs */
 static long g_next_read;
 static int g_fails;
 static int g_timeouts;
@@ -369,13 +374,21 @@ static int adopt_candidate(void) {
     return 1;
 }
 
+/* any failure here waits for the next link-up or Refresh */
+static void discovery_failed(void) {
+    g_auto = 0;
+    g_requested = 0;
+}
+
 static void start_discovery(long now) {
     if (now < g_disc_next_allowed) return;
     g_disc_next_allowed = now + DISCOVERY_RETRY_MS;
+    g_link_read = 0;
 
     if (!g_sys) {
         fprintf(stderr, "btd700d: no system bus, cannot look for the headphones over LE "
                         "(set BTD700_HEADSET_ADDRESS)\n");
+        discovery_failed();
         return;
     }
 
@@ -383,6 +396,7 @@ static void start_discovery(long now) {
     if (adopt_candidate()) return;
     if (!g_adapter[0]) {
         fprintf(stderr, "btd700d: no Bluetooth adapter in bluetoothd, battery level unavailable\n");
+        discovery_failed();
         return;
     }
 
@@ -404,6 +418,7 @@ static void start_discovery(long now) {
         adapter_call(g_disc_adapter, "StopDiscovery", 1);
         fprintf(stderr, "btd700d: LE scan failed, is Bluetooth on and LE enabled "
                         "(ControllerMode in /etc/bluetooth/main.conf)?\n");
+        discovery_failed();
         return;
     }
 
@@ -418,14 +433,15 @@ static void step_discovery(long now) {
         g_disc_next_poll = now + DISCOVERY_POLL_MS;
         if (adopt_candidate()) {
             stop_discovery();
-            g_next_read = now + IDLE_SETTLE_MS;
+            g_next_read = now;
             return;
         }
     }
     if (now >= g_disc_deadline) {
         stop_discovery();
-        fprintf(stderr, "btd700d: headphones not found over LE, trying again in %d min\n",
-                DISCOVERY_RETRY_MS / 60000);
+        discovery_failed();
+        fprintf(stderr, "btd700d: headphones not found over LE, they advertise only until "
+                        "audio plays, trying again when they link up\n");
     }
 }
 
@@ -437,6 +453,7 @@ static void close_read(void) {
     if (g_fd >= 0) close(g_fd);
     g_fd = -1;
     g_rstate = R_IDLE;
+    g_hold_until = 0;
 }
 
 static void read_ok(int level, long now) {
@@ -454,17 +471,19 @@ static void read_failed(long now, const char* what, int err) {
     close_read();
     g_fails++;
     if (err == ETIMEDOUT) g_timeouts++;
-    g_next_read = now + (g_fails < 3 ? RETRY_MS : g_interval_ms);
+    /* a timeout means they do not advertise, so retrying before the next link-up is pointless */
+    if (err == ETIMEDOUT || g_fails >= 3) g_auto = 0;
+    else g_next_read = now + RETRY_MS;
 
     const char* hint = "";
-    if (err == ECONNREFUSED) hint = " (Bluetooth LE disabled on the PC adapter?)";
+    if (err == ETIMEDOUT) hint = " (out of range, or audio played since they were switched on, trying again when they link up)";
+    else if (err == ECONNREFUSED) hint = " (Bluetooth LE disabled on the PC adapter?)";
     else if (err == EAFNOSUPPORT || err == EHOSTUNREACH || err == ENODEV) hint = " (no Bluetooth adapter or it is off?)";
     else if (err == ENOSYS || err == ENOTCONN) hint = " (the headphones did not complete the connection, busy with audio?)";
-    if (g_fails <= 3 || g_fails % 12 == 0)
-        fprintf(stderr, "btd700d: battery read from %s failed: %s%s%s%s\n", g_addr_str, what,
-                err ? ": " : "", err ? strerror(err) : "", hint);
+    fprintf(stderr, "btd700d: battery read from %s failed: %s%s%s%s\n", g_addr_str, what,
+            err ? ": " : "", err ? strerror(err) : "", hint);
 
-    /* the headphones were never seen at this address for about an hour, maybe a different pair */
+    /* no connection at this address for a dozen tries in a row, maybe a different pair */
     if (!g_addr_from_env && g_timeouts >= FORGET_AFTER_TIMEOUTS) {
         fprintf(stderr, "btd700d: forgetting %s, will look for the headphones again\n", g_addr_str);
         forget_addr();
@@ -473,6 +492,12 @@ static void read_failed(long now, const char* what, int err) {
 }
 
 static void start_read(long now) {
+    g_requested = 0;
+    if (g_link_read) {
+        g_link_read = 0;
+        g_hold_until = now + HOLD_MS;
+    }
+
     struct sockaddr_l2_le sa;
     int fd = socket(AF_BLUETOOTH, SOCK_SEQPACKET | SOCK_NONBLOCK | SOCK_CLOEXEC, BTPROTO_L2CAP);
     if (fd < 0) {
@@ -703,7 +728,9 @@ static void reset_reading(void) {
     close_read();
     stop_discovery();
     g_was_up = 0;
-    g_was_idle = 0;
+    g_auto = 0;
+    g_requested = 0;
+    g_link_read = 0;
     g_battery = -1;
     g_battery_time = 0;
 }
@@ -724,6 +751,7 @@ void headset_set_enabled(int on) {
 int headset_enabled(void) { return g_enabled; }
 
 void headset_request_read(void) {
+    g_requested = 1;
     g_next_read = 0;
     g_fails = 0;
     g_disc_next_allowed = 0;
@@ -741,12 +769,16 @@ void headset_tick(int up, int idle) {
 
     if (!g_was_up) {
         g_was_up = 1;
+        g_auto = 1;
+        g_link_read = 1;
         g_fails = 0;
-        g_next_read = now + SETTLE_MS;
+        g_next_read = now;
     }
-    if (idle && !g_was_idle && g_next_read < now + IDLE_SETTLE_MS)
-        g_next_read = now + IDLE_SETTLE_MS;
-    g_was_idle = idle;
+    /* once audio plays they stop advertising until switched off */
+    if (!idle) {
+        g_auto = 0;
+        g_link_read = 0;
+    }
 
     if (g_discovering) {
         step_discovery(now);
@@ -754,20 +786,29 @@ void headset_tick(int up, int idle) {
     }
 
     if (g_rstate != R_IDLE) {
-        /* back off as soon as audio starts, a pending LE connection must not compete with it */
+        /* a pending LE connection must not compete with the audio */
         if (!idle) {
             close_read();
-            g_next_read = now + RETRY_MS;
             return;
         }
         step_read(now);
         return;
     }
 
-    if (!idle || now < g_next_read) return;
+    if (!idle || (!g_auto && !g_requested) || now < g_next_read) return;
 
-    if (!g_have_addr) start_discovery(now);
-    else start_read(now);
+    if (g_have_addr) {
+        start_read(now);
+    } else if (g_link_read) {
+        /* discovery can block on the bus, let the sink switch go first */
+        g_link_read = 0;
+    } else {
+        start_discovery(now);
+    }
+}
+
+int headset_sink_hold(void) {
+    return g_hold_until && mono_ms() < g_hold_until;
 }
 
 int headset_battery(void) { return g_battery; }

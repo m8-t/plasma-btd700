@@ -20,9 +20,12 @@
   FirmwareVersion  "major.minor.build", empty if not read
   HeadsetBattery   headphone battery level in percent, -1 if unknown. Read
                    over Bluetooth LE through the PC's own adapter (standard
-                   Battery Level characteristic, no pairing) while the
-                   headphones are linked to the dongle and it is not streaming.
-                   Reset to -1 when the headphones leave the dongle.
+                   Battery Level characteristic, no pairing) when the
+                   headphones link to the dongle, before audio plays: the
+                   HDB 630 stops advertising over LE once audio plays and
+                   until it is switched off. Read again at an interval while
+                   nothing has played. Reset to -1 when the headphones leave
+                   the dongle.
   HeadsetBatteryUpdated
                    unix time in seconds of the HeadsetBattery reading, 0 if none
   BatteryReading   whether the battery is read at all, the user's choice set
@@ -34,8 +37,8 @@
   not supported by the dongle), org.btd700ctl.Error.NotPresent (no dongle),
   org.btd700ctl.Error.Failed (HID failure).
   SetAudioMode keeps the current transport unchanged.
-  Refresh also reads the headphone battery at the next moment the dongle is
-  not streaming. SetBatteryReading works with or without a dongle.
+  Refresh also tries one headphone battery read at the next moment the dongle
+  is not streaming. SetBatteryReading works with or without a dongle.
   Connect and Disconnect are plain HID triggers. The dongle re-establishes the
   link on its own while the headphones are powered on, so Disconnect effectively
   forces a reconnect.

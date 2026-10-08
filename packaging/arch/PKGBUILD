@@ -1,0 +1,48 @@
+# Maintainer: Dan <daniel@m8t.io>
+pkgname=plasma-btd700-git
+pkgver=0.1.r38.138e647
+pkgrel=1
+pkgdesc='KDE Plasma 6 applet and control daemon for the Sennheiser BTD 700 USB Bluetooth dongle'
+arch=('x86_64' 'aarch64')
+url='https://github.com/m8-t/plasma-btd700'
+license=('LGPL-2.1-only')
+depends=('glibc' 'hicolor-icon-theme' 'hidapi' 'kirigami' 'libplasma' 'libpulse' 'qt6-base' 'qt6-declarative' 'systemd-libs')
+makedepends=('git' 'cmake' 'extra-cmake-modules' 'kpackage')
+checkdepends=('dbus')
+optdepends=('plasma-workspace: hosts the applet in a panel or the system tray'
+            'pipewire-pulse: PulseAudio server that pactl talks to')
+provides=("plasma-btd700=$pkgver" "btd700ctl=$pkgver")
+conflicts=('plasma-btd700' 'btd700ctl' 'btd700ctl-git')
+replaces=('btd700ctl-git')
+install="$pkgname.install"
+source=("${pkgname}::git+${url}.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  printf '%s.r%s.%s' \
+    "$(grep 'project(' -A2 CMakeLists.txt | grep -oP 'VERSION\s+\K[0-9]+(\.[0-9]+)+')" \
+    "$(git rev-list --count HEAD)" \
+    "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cmake -B build -S "$pkgname" \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_BUILD_TYPE=None \
+    -DBUILD_SHARED_LIBS=ON \
+    -DBUILD_PLASMOID=ON
+  cmake --build build
+}
+
+check() {
+  dbus-run-session -- ctest --test-dir build --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install build
+
+  cd "$pkgname"
+  install -Dm644 udev/99-btd700.rules "$pkgdir/usr/lib/udev/rules.d/99-btd700.rules"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

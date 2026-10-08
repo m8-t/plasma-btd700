@@ -104,7 +104,8 @@ The dongle does not report the headphones' battery, but the HDB 630 offers the s
 - Only while the headphones are connected to the dongle and the dongle is not streaming. In testing the headphones did not accept the LE connection while audio played, so the last value stays during playback; the applet adds its age once it is older than 10 minutes.
 - Every 5 minutes, and 15 seconds after the headphones connect, it opens a short unpaired LE connection, reads the Battery Level characteristic and disconnects. The headphones drop unpaired LE links after about 30 seconds anyway. No multipoint slot is used, the dongle and a phone stay connected.
 - The headphones' LE address is found once through bluetoothd, by scanning for the Sennheiser (Sonova) service UUID `0xFCFE`, and stored in `$XDG_STATE_HOME/btd700d/headset`. With several Sennheiser devices around, the strongest signal wins. `BTD700_HEADSET_ADDRESS=AA:BB:CC:DD:EE:FF` skips the scan (append `/random` for a random static address).
-- `BTD700_BATTERY_INTERVAL=<seconds>` changes the interval (minimum 60), `0` turns the feature off.
+- It can be turned off in the applet's context menu (right click, "Read Headphone Battery") or with `busctl --user call org.btd700ctl.Dongle /org/btd700ctl/Dongle org.btd700ctl.Dongle1 SetBatteryReading b false`. Then btd700d does no LE scans or connections at all. The choice is stored in `$XDG_STATE_HOME/btd700d/battery-reading`; it is on by default.
+- `BTD700_BATTERY_INTERVAL=<seconds>` changes the interval (60 seconds to 7 days).
 
 If no battery level shows up:
 
@@ -141,10 +142,11 @@ busctl --user monitor org.btd700ctl.Dongle
 | `FirmwareVersion` | s | `major.minor.build` |
 | `HeadsetBattery` | i | headphone battery in percent, -1 if unknown |
 | `HeadsetBatteryUpdated` | t | unix time of the battery reading, 0 if none |
+| `BatteryReading` | b | battery reading turned on, see `SetBatteryReading` |
 
 All properties are read-only and emit `PropertiesChanged`.
 
-Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`. `Connect` and `Disconnect` are plain triggers; after `Disconnect` the dongle reconnects by itself. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. `Refresh` also reads the headphone battery at the next moment the dongle is not streaming. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
+Methods: `SetAudioMode(s)`, `SetCodec(s)`, `Connect()`, `Disconnect()`, `Refresh()`, `SetBatteryReading(b)`. `Connect` and `Disconnect` are plain triggers; after `Disconnect` the dongle reconnects by itself. `SetAudioMode` keeps the current transport, so changing the mode does not drop you out of LE Audio or multipoint. `Refresh` also reads the headphone battery at the next moment the dongle is not streaming. `SetBatteryReading` stores the choice and works without a dongle. Errors: `org.freedesktop.DBus.Error.InvalidArgs`, `org.btd700ctl.Error.NotPresent`, `org.btd700ctl.Error.Failed`.
 
 ## Notes
 

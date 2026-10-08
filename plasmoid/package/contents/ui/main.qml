@@ -97,6 +97,8 @@ PlasmoidItem {
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: i18n("Read Headphone Battery")
+            // the tray shows this as an icon-only button in the popup header
+            icon.name: "battery-good-symbolic"
             checkable: true
             checked: dongle.batteryReading
             enabled: dongle.serviceAvailable
